@@ -20,6 +20,14 @@ hardware:
   lick_channel: "Dev1/port0/line1"
   puff_side: "right"     # which side the puff is delivered - easy trials play audio here
 
+  lick_threshold: 0.5             # sensor threshold (for analog-style signals; DI booleans map to 0/1)
+  lick_logic_mode: "high_is_lick" # high_is_lick or low_is_lick
+  lick_refractory_sec: 0.05       # debounce/refractory interval between lick edges
+  lick_sample_interval_sec: 0.001 # continuous sample interval (1 kHz)
+  valve_channel: "Dev1/port0/line6"
+  valve_open_duration: 0.04       # seconds; tune via calibration for ~3–3.5 µL
+  reward_on_lick: false           # if true, open valve on each detected lick edge
+
 audio:
   left_freq: 8000        # Hz - 8kHz, well within mouse hearing sweet spot
   right_freq: 16000      # Hz - 16kHz, one octave above left, clearly distinct
