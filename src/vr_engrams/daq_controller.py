@@ -80,7 +80,7 @@ class DaqController:
 
         if not self.enabled:
             time.sleep(duration_sec)
-            self._logger.info("%s used fallback path=disabled_no_hardware", event_name)
+            self._logger.info("%s pulse path=fallback_disabled_no_hardware", event_name)
             return "fallback_disabled_no_hardware"
 
         if name in self.do_tasks:
@@ -112,12 +112,12 @@ class DaqController:
 
             if named_task is not None:
                 named_task.write(False)
-            self._logger.info("%s used hardware-timed path", event_name)
+            self._logger.info("%s pulse path=hardware_timed", event_name)
             return "hardware_timed"
         except Exception as exc:
             if not self.allow_software_fallback:
                 self._logger.error(
-                    "%s hardware-timed path failed and fallback disabled: %s",
+                    "%s pulse path=hardware_timed_failed fallback=disabled error=%s",
                     event_name,
                     exc,
                 )
@@ -126,7 +126,7 @@ class DaqController:
                 ) from exc
 
             self._logger.warning(
-                "%s using software fallback path due to hardware-timed failure: %s",
+                "%s pulse path=fallback_software reason=hardware_timed_failure error=%s",
                 event_name,
                 exc,
             )
@@ -146,7 +146,7 @@ class DaqController:
         if not self.enabled:
             if duration_sec is not None:
                 time.sleep(duration_sec)
-            self._logger.info("opto_train used fallback path=disabled_no_hardware")
+            self._logger.info("opto_train path=fallback_disabled_no_hardware")
             return "fallback_disabled_no_hardware"
 
         if not self.opto_counter_channel:
@@ -168,7 +168,7 @@ class DaqController:
         self._opto_task.timing.cfg_implicit_timing(sample_mode=self._acquisition_type.CONTINUOUS)
         self._opto_task.start()
         self._logger.info(
-            "opto_train started with hardware counter path freq_hz=%s pulse_width_s=%s",
+            "opto_train path=hardware_timed_counter freq_hz=%s pulse_width_s=%s",
             self.opto_freq_hz,
             self.opto_pulse_width_s,
         )
