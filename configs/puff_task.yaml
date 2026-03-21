@@ -1,0 +1,30 @@
+session:
+  n_trials: 40
+  easy_trials: 15        # first N trials: audio cue only (no side mismatch)
+
+base_path_pc2: "Y:/"    # PC2 writes behaviour_log.csv here (mapped shared drive)
+base_path_pc1: "C:/Users/User/Documents/Data/Josh_test/BehaviourData"  # PC1 writes frame_log.csv here
+
+timing:
+  baseline: 15           # seconds of quiet imaging before task starts
+  iti_min: 2.0           # minimum ITI in seconds
+  iti_max: 6.0           # maximum ITI in seconds
+  audio_duration: 0.5    # audio cue duration in seconds
+  delay: 1.5             # delay between audio offset and puff
+  puff_duration: 0.05    # puff duration in seconds (50ms)
+  response_window: 0.8   # seconds to lick after puff
+  timeout: 5.0           # penalty timeout after early lick
+
+hardware:
+  puff_channel: "Dev1/port0/line5"
+  lick_channel: "Dev1/port0/line1"
+  puff_side: "right"     # which side the puff is delivered - easy trials play audio here
+
+audio:
+  left_freq: 8000        # Hz - 8kHz, well within mouse hearing sweet spot
+  right_freq: 16000      # Hz - 16kHz, one octave above left, clearly distinct
+
+
+
+
+
