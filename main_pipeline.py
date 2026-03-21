@@ -13,6 +13,7 @@ import argparse
 from datetime import datetime
 
 from hardware.puff_controller import PuffController
+from hardware.daq_controller import DaqController
 from hardware.lick_detector import LickDetector
 from hardware.audio_controller import AudioController
 from utils.trial_logger import TrialLogger
