@@ -1,26 +1,26 @@
 from __future__ import annotations
 
 import random
-import time
 from dataclasses import dataclass
 from typing import Any
 
 from .lick_detector import LickDetector
 from .logger import ExperimentLogger
+from .phases import (
+    DecoderTrainingPhase,
+    FMRIOptoPhase,
+    FearConditioningPhase,
+    PhaseContext,
+    PostConditioningScenePhase,
+    PreConditioningScenePhase,
+    build_scene_assignment,
+)
 from .stimulus_controller import StimulusController
-
-PHASE_ORDER = [
-    "decoder",
-    "pre-conditioning",
-    "fear conditioning",
-    "post-conditioning",
-    "fMRI opto block design",
-]
 
 
 @dataclass
 class ExperimentScheduler:
-    """Phase orchestration and trial randomization rules."""
+    """Sequential phase orchestration controlled entirely by config flags."""
 
     config: dict[str, Any]
     stimuli: StimulusController
@@ -28,69 +28,46 @@ class ExperimentScheduler:
     lick_detector: LickDetector | None = None
 
     def run_all_phases(self) -> None:
-        self.logger.log_event("experiment_start", phase_order=PHASE_ORDER)
-        for phase_name in PHASE_ORDER:
-            phase_cfg = self.config.get("phases", {}).get(phase_name, {})
-            self.run_phase(phase_name, phase_cfg)
-        self.logger.log_event("experiment_complete")
+        random_seed = self.config.get("random_seed")
+        if random_seed is not None:
+            random_seed = int(random_seed)
 
-    def run_phase(self, phase_name: str, phase_cfg: dict[str, Any]) -> None:
-        trials = int(phase_cfg.get("trials", 0))
-        iti_range = phase_cfg.get("iti_sec", [1.0, 2.0])
-        shuffled = bool(phase_cfg.get("randomize_trial_order", True))
-
-        trial_table = list(phase_cfg.get("trial_table", []))
-        if trial_table and shuffled:
-            random.shuffle(trial_table)
-
-        self.logger.log_event(
-            "phase_start",
-            phase=phase_name,
-            trials=trials,
-            randomize_trial_order=shuffled,
+        context = PhaseContext(
+            stimuli=self.stimuli,
+            logger=self.logger,
+            lick_detector=self.lick_detector,
+            random_seed=random_seed,
+            rng=random.Random(random_seed),
+            scene_assignment=build_scene_assignment(self.config, random_seed),
         )
 
-        for trial_idx in range(trials):
-            trial_spec = trial_table[trial_idx % len(trial_table)] if trial_table else {}
-            iti = random.uniform(float(iti_range[0]), float(iti_range[1]))
-            self.logger.log_event(
-                "trial_start",
-                phase=phase_name,
-                trial_index=trial_idx,
-                iti_sec=round(iti, 4),
-                trial_spec=trial_spec,
-            )
+        phase_sequence = [
+            ("decoder_training", DecoderTrainingPhase),
+            ("pre_conditioning_scene", PreConditioningScenePhase),
+            ("fear_conditioning", FearConditioningPhase),
+            ("post_conditioning_scene", PostConditioningScenePhase),
+            ("fmri_opto", FMRIOptoPhase),
+        ]
 
-            self._run_trial_stimuli(phase_name, trial_spec, phase_cfg)
+        self.logger.log_event(
+            "experiment_start",
+            phase_sequence=[phase_key for phase_key, _ in phase_sequence],
+            random_seed=random_seed,
+            scene_assignment=context.scene_assignment,
+        )
 
-            time.sleep(iti)
-            self.logger.log_event("trial_end", phase=phase_name, trial_index=trial_idx)
+        phases_cfg = self.config.get("phases", {})
+        for phase_key, phase_cls in phase_sequence:
+            phase_cfg = dict(phases_cfg.get(phase_key, {}))
+            enabled = bool(phase_cfg.pop("enabled", False))
 
-        self.logger.log_event("phase_end", phase=phase_name)
+            if not enabled:
+                self.logger.log_event("phase_skipped", phase=phase_key, reason="disabled")
+                continue
 
-    def _run_trial_stimuli(self, phase_name: str, trial_spec: dict[str, Any], phase_cfg: dict[str, Any]) -> None:
-        # Shared cue handling
-        cue_duration = float(trial_spec.get("cue_duration_sec", phase_cfg.get("cue_duration_sec", 0.5)))
-        cue_frequency = float(trial_spec.get("cue_frequency_hz", phase_cfg.get("cue_frequency_hz", 8000)))
-        cue_side = trial_spec.get("cue_side", phase_cfg.get("cue_side", "both"))
-        self.stimuli.deliver_sound(cue_frequency, cue_duration, side=cue_side)
+            phase = phase_cls(context=context, config=phase_cfg)
+            self.logger.log_event("phase_start", phase=phase.phase_key, display_name=phase.display_name)
+            phase.run()
+            self.logger.log_event("phase_end", phase=phase.phase_key)
 
-        if phase_name == "fear conditioning" and phase_cfg.get("shock_enabled", True):
-            self.stimuli.deliver_shock(
-                channel=phase_cfg.get("shock_channel", "shock"),
-                duration_sec=float(phase_cfg.get("shock_duration_sec", 0.3)),
-                amplitude=phase_cfg.get("shock_amplitude", None),
-            )
-
-        if phase_name == "fMRI opto block design":
-            self.stimuli.deliver_opto(
-                channel=phase_cfg.get("opto_channel", "opto"),
-                duration_sec=float(phase_cfg.get("opto_duration_sec", 1.0)),
-                power_mw=phase_cfg.get("opto_power_mw", None),
-            )
-
-        if phase_cfg.get("puff_enabled", False):
-            self.stimuli.deliver_puff(
-                channel=phase_cfg.get("puff_channel", "puff"),
-                duration_sec=float(phase_cfg.get("puff_duration_sec", 0.05)),
-            )
+        self.logger.log_event("experiment_complete")

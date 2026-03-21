@@ -79,3 +79,65 @@ logging_session_metadata:
     behaviour_log: "behaviour_log.csv"
     frame_log: "frame_log.csv"
     event_log: "event_log.csv"
+
+# Scheduler configuration for src/vr_engrams/scheduler.py
+random_seed: 123
+scene_assignment:
+  target: "A"
+  distractor: "B"
+
+phases:
+  decoder_training:
+    enabled: true
+    baseline_sec: 2.0
+    trial_table:
+      - cue_frequency_hz: 8000
+        cue_duration_sec: 0.5
+        cue_side: "left"
+        iti_sec: 1.5
+      - cue_frequency_hz: 16000
+        cue_duration_sec: 0.5
+        cue_side: "right"
+        iti_sec: 1.5
+
+  pre_conditioning_scene:
+    enabled: true
+    scene_key: "target"
+    duration_sec: 5.0
+    visual_channel_by_scene:
+      A: "visual"
+      B: "visual"
+
+  fear_conditioning:
+    enabled: true
+    scene_key: "target"
+    visual_channel_by_scene:
+      A: "visual"
+      B: "visual"
+    trial_table:
+      - cue_frequency_hz: 8000
+        cue_duration_sec: 0.5
+        cue_side: "left"
+        shock_channel: "shock"
+        shock_duration_sec: 0.2
+        iti_sec: 2.0
+
+  post_conditioning_scene:
+    enabled: true
+    scene_key: "target"
+    duration_sec: 5.0
+    visual_channel_by_scene:
+      A: "visual"
+      B: "visual"
+
+  fmri_opto:
+    enabled: true
+    cycle_table:
+      - opto_channel: "opto"
+        on_duration_sec: 1.0
+        off_duration_sec: 1.0
+        power_mw: 1.5
+      - opto_channel: "opto"
+        on_duration_sec: 1.0
+        off_duration_sec: 1.0
+        power_mw: 1.5
