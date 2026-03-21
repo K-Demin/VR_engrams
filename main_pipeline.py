@@ -71,14 +71,7 @@ print("Camera connection OK")
 # Hardware setup
 # =======================================================
 print("Initialising hardware...")
-daq   = DaqController(
-    do_sample_rate_hz=config["hardware"].get("do_sample_rate_hz", 10000),
-    opto_counter_channel=config["hardware"].get("opto_counter_channel"),
-    opto_freq_hz=config["hardware"].get("opto_freq_hz", 20.0),
-    opto_pulse_width_s=config["hardware"].get("opto_pulse_width_s", 0.015),
-)
-puff  = PuffController(config["hardware"]["puff_channel"], daq=daq)
-lick  = LickDetector(config["hardware"]["lick_channel"])
+puff  = PuffController(config["hardware"]["puff_channel"])
 audio = AudioController()
 
 logger = TrialLogger(
@@ -91,7 +84,24 @@ logger = TrialLogger(
 # =======================================================
 # Task setup
 # =======================================================
-task = PuffTaskFSM(config, puff, audio, lick, logger)
+task = PuffTaskFSM(config, puff, audio, None, logger)
+
+
+lick = LickDetector(
+    sensor_channel=config["hardware"]["lick_channel"],
+    logger=logger,
+    threshold=config["hardware"].get("lick_threshold", 0.5),
+    logic_mode=config["hardware"].get("lick_logic_mode", "high_is_lick"),
+    refractory_sec=config["hardware"].get("lick_refractory_sec", 0.05),
+    sample_interval_sec=config["hardware"].get("lick_sample_interval_sec", 0.001),
+    valve_channel=config["hardware"].get("valve_channel"),
+    valve_open_duration_sec=config["hardware"].get("valve_open_duration", 0.04),
+    reward_on_lick=config["hardware"].get("reward_on_lick", False),
+    trial_provider=lambda: task.trial,
+    phase_provider=lambda: task.state,
+)
+
+task.lick = lick
 
 # =======================================================
 # Run experiment
@@ -105,12 +115,13 @@ try:
         )
 
     logger.start_session()
+    lick.start()
     print("Running behavioural task...")
     task.run()
 
 finally:
     print("Stopping camera acquisition...")
     stop_camera()
-    daq.close()
+    lick.stop()
     logger.close()
     print("Experiment finished")
