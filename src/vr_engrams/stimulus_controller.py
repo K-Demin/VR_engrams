@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from .daq_controller import DaqController
 from .logger import ExperimentLogger
@@ -13,6 +14,27 @@ class StimulusController:
 
     daq: DaqController
     logger: ExperimentLogger
+
+    def __post_init__(self) -> None:
+        self.log_startup_self_check()
+
+    def log_startup_self_check(self) -> None:
+        configured_outputs = sorted(self.daq.do_tasks.keys())
+        startup_summary: dict[str, Any] = {
+            "daq_enabled": self.daq.enabled,
+            "digital_output_names": configured_outputs,
+            "opto_counter_channel": self.daq.opto_counter_channel,
+            "timing_policy": {
+                "shock": {"preferred_path": "hardware_timed", "allow_software_fallback": self.daq.allow_software_fallback},
+                "opto": {
+                    "preferred_path": "hardware_timed_counter",
+                    "allow_software_fallback": False,
+                    "frequency_hz": self.daq.opto_freq_hz,
+                    "pulse_width_s": self.daq.opto_pulse_width_s,
+                },
+            },
+        }
+        self.logger.log_event("stimulus_startup_self_check", **startup_summary)
 
     def deliver_visual(self, channel: str, duration_sec: float) -> None:
         self.logger.log_event("stim_visual", channel=channel, duration_sec=duration_sec)
@@ -45,6 +67,8 @@ class StimulusController:
 
     def deliver_opto(self, channel: str, duration_sec: float, power_mw: float | None = None) -> None:
         # channel retained for compatibility with scheduler/config, but DAQ uses configured counter.
+        if not self.daq.opto_counter_channel:
+            raise ValueError("opto_counter_channel is required to deliver opto in opto phases")
         path = self.daq.start_opto_train(duration_sec)
         self.logger.log_event(
             "stim_opto",

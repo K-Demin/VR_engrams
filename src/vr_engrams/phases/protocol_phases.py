@@ -100,28 +100,42 @@ class FearConditioningPhase(ExperimentPhase):
     display_name = "fear"
 
     def run(self) -> None:
-        scene_key = str(self.config.get("scene_key", "target"))
+        shock_enabled = bool(self._require("shock_enabled"))
+        if not shock_enabled:
+            raise ValueError("fear_conditioning requires shock_enabled=true before run")
+
+        scene_key = self._require("scene_key")
         visual_channel_map = dict(self._require("visual_channel_by_scene"))
-        shocks = list(self._require("shocks"))
+        trial_table = list(self._require("trial_table"))
+        configured_outputs = set(self.context.stimuli.daq.do_tasks.keys())
+        invalid_channels = sorted(
+            {
+                trial.get("shock_channel")
+                for trial in trial_table
+                if not isinstance(trial.get("shock_channel"), str)
+                or not trial.get("shock_channel", "").strip()
+                or trial.get("shock_channel") not in configured_outputs
+            }
+        )
+        if invalid_channels:
+            raise ValueError(
+                "fear_conditioning requires valid shock output mapping before run; "
+                f"invalid shock_channel entries: {invalid_channels}"
+            )
 
         assigned_scene = self.context.scene_assignment[scene_key]
         visual_channel = visual_channel_map[assigned_scene]
 
-        self.context.logger.log_event(
-            "fear_start",
-            scene_key=scene_key,
-            scene_id=assigned_scene,
-            shock_count=len(shocks),
-        )
-        for idx, shock_cfg in enumerate(shocks):
-            pre_shock_sec = float(shock_cfg.get("pre_shock_sec", 0.0))
-            shock_duration_sec = float(shock_cfg["shock_duration_sec"])
-            shock_channel = str(shock_cfg.get("shock_channel", "shock"))
-            post_shock_sec = float(shock_cfg.get("post_shock_sec", 0.0))
-
-            self.context.logger.log_event("fear_shock_start", shock_index=idx, shock=shock_cfg)
-            if pre_shock_sec > 0:
-                self.context.stimuli.deliver_visual(channel=visual_channel, duration_sec=pre_shock_sec)
+        self.context.logger.log_event("fear_conditioning_start", scene_key=scene_key, scene_id=assigned_scene)
+        for idx, trial in enumerate(trial_table):
+            cue_frequency_hz = float(trial["cue_frequency_hz"])
+            cue_duration_sec = float(trial["cue_duration_sec"])
+            cue_side = trial["cue_side"]
+            shock_duration_sec = float(trial["shock_duration_sec"])
+            shock_channel = trial["shock_channel"]
+            iti_sec = float(trial["iti_sec"])
+            if not isinstance(shock_channel, str) or not shock_channel.strip():
+                raise ValueError(f"fear_conditioning trial {idx} has invalid shock_channel mapping: {shock_channel!r}")
 
             self.context.stimuli.deliver_shock(
                 channel=shock_channel,
