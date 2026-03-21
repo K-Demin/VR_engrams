@@ -13,6 +13,7 @@ import argparse
 from datetime import datetime
 
 from hardware.puff_controller import PuffController
+from hardware.daq_controller import DaqController
 from hardware.lick_detector import LickDetector
 from hardware.audio_controller import AudioController
 from utils.trial_logger import TrialLogger
@@ -70,7 +71,13 @@ print("Camera connection OK")
 # Hardware setup
 # =======================================================
 print("Initialising hardware...")
-puff  = PuffController(config["hardware"]["puff_channel"])
+daq   = DaqController(
+    do_sample_rate_hz=config["hardware"].get("do_sample_rate_hz", 10000),
+    opto_counter_channel=config["hardware"].get("opto_counter_channel"),
+    opto_freq_hz=config["hardware"].get("opto_freq_hz", 20.0),
+    opto_pulse_width_s=config["hardware"].get("opto_pulse_width_s", 0.015),
+)
+puff  = PuffController(config["hardware"]["puff_channel"], daq=daq)
 lick  = LickDetector(config["hardware"]["lick_channel"])
 audio = AudioController()
 
@@ -104,5 +111,6 @@ try:
 finally:
     print("Stopping camera acquisition...")
     stop_camera()
+    daq.close()
     logger.close()
     print("Experiment finished")
