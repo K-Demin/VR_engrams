@@ -1,0 +1,81 @@
+hardware_channels:
+  lick_valve:
+    lick_ni_di_channel: "Dev1/port0/line1"
+    reward_valve_ni_do_channel: "Dev1/port0/line4"
+    valve_calibration:
+      nominal_target_uL: 3.0-3.5
+      open_time_ms: 50
+      note: "Start from 45-55 ms and verify gravimetrically on your setup; current runs use 50 ms for ~3-3.5 uL."
+  puff:
+    ni_do_channel: "Dev1/port0/line5"
+    pressure_psi: 10
+  sound:
+    backend: "sounddevice"
+    left_output_channel: "speaker_left"
+    right_output_channel: "speaker_right"
+  visual:
+    trigger_ni_do_channel: "Dev1/port0/line6"
+    display_id: 0
+  shock:
+    ni_do_channel: "Dev1/port0/line7"
+    enabled: false
+  opto:
+    ni_do_channel: "Dev1/port1/line0"
+    enabled: false
+
+stimulus_parameters:
+  audio:
+    left_freq_hz: 8000
+    right_freq_hz: 16000
+    duration_sec: 0.5
+    volume: 0.6
+  puff:
+    side: "right"
+    duration_sec: 0.05
+  visual:
+    scene_ids: ["A", "B"]
+    contrast: 1.0
+  shock:
+    duration_sec: 0.2
+    current_mA: 0.0
+  opto:
+    wavelength_nm: 470
+    power_mW: 0.0
+    pulse_hz: 20
+
+phase_timings_counts:
+  baseline:
+    duration_sec: 15
+    repetitions: 1
+  acquisition:
+    n_trials: 40
+    iti_min_sec: 2.0
+    iti_max_sec: 6.0
+    delay_sec: 1.5
+    response_window_sec: 0.8
+    timeout_sec: 5.0
+  extinction:
+    enabled: false
+    n_trials: 0
+
+randomization_constraints:
+  mouse_level_scene_assignment:
+    strategy: "blocked_by_mouse_id"
+    target_scene_set: ["A", "B"]
+    note: "Assign each mouse once at session start: either target=A distractor=B or target=B distractor=A, then keep fixed for all phases."
+  audio_puff_pairing:
+    easy_trials: 15
+    easy_rule: "audio_side_matches_puff_side"
+    post_easy_randomization: "uniform_left_right"
+
+logging_session_metadata:
+  experiment_name: "puff_task"
+  rig_id: "VR_RIG_01"
+  operator: "unknown"
+  storage:
+    base_path_pc2: "Y:/"
+    base_path_pc1: "C:/Users/User/Documents/Data/Josh_test/BehaviourData"
+  files:
+    behaviour_log: "behaviour_log.csv"
+    frame_log: "frame_log.csv"
+    event_log: "event_log.csv"

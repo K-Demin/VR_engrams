@@ -13,10 +13,12 @@ Created on Fri Mar  6 16:34:48 2026
 # Matches the logging pattern from the somatosensory localiser task.
 
 import csv
+import hashlib
 import os
 import time
-import yaml
 from datetime import datetime
+
+import yaml
 
 
 class TrialLogger:
@@ -78,9 +80,25 @@ class TrialLogger:
         self._log_file.flush()
 
     def _save_config(self, config: dict):
+        """Persist an immutable, hash-verifiable config snapshot for the session."""
         config_path = os.path.join(self.session_path, "config_used.yaml")
-        with open(config_path, "w") as f:
-            yaml.dump(config, f)
+        config_text = yaml.safe_dump(config, sort_keys=True)
+
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(config_text)
+
+        # Write a digest so downstream analyses can verify exact provenance.
+        digest = hashlib.sha256(config_text.encode("utf-8")).hexdigest()
+        with open(os.path.join(self.session_path, "config_used.sha256"), "w", encoding="utf-8") as f:
+            f.write(f"{digest}  config_used.yaml\n")
+
+        # Best-effort lock: config snapshot should be read-only once written.
+        try:
+            os.chmod(config_path, 0o444)
+            os.chmod(os.path.join(self.session_path, "config_used.sha256"), 0o444)
+        except OSError:
+            # Some network filesystems may not support chmod.
+            pass
 
     # ------------------------------------------------------------------
     # Logging
