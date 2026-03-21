@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import random
-import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,18 +9,10 @@ from .logger import ExperimentLogger
 from .scene_engine import SceneEngine
 from .stimulus_controller import StimulusController
 
-PHASE_ORDER = [
-    "decoder",
-    "pre-conditioning",
-    "fear conditioning",
-    "post-conditioning",
-    "fMRI opto block design",
-]
-
 
 @dataclass
 class ExperimentScheduler:
-    """Phase orchestration and trial randomization rules."""
+    """Sequential phase orchestration controlled entirely by config flags."""
 
     config: dict[str, Any]
     stimuli: StimulusController
@@ -44,34 +35,34 @@ class ExperimentScheduler:
         iti_range = phase_cfg.get("iti_sec", [1.0, 2.0])
         shuffled = bool(phase_cfg.get("randomize_trial_order", True))
 
-        trial_table = list(phase_cfg.get("trial_table", []))
-        if trial_table and shuffled:
-            random.shuffle(trial_table)
+        phase_sequence = [
+            ("decoder_training", DecoderTrainingPhase),
+            ("pre_conditioning_scene", PreConditioningScenePhase),
+            ("fear_conditioning", FearConditioningPhase),
+            ("post_conditioning_scene", PostConditioningScenePhase),
+            ("fmri_opto", FMRIOptoPhase),
+        ]
 
         self.logger.log_event(
-            "phase_start",
-            phase=phase_name,
-            trials=trials,
-            randomize_trial_order=shuffled,
+            "experiment_start",
+            phase_sequence=[phase_key for phase_key, _ in phase_sequence],
+            random_seed=random_seed,
+            scene_assignment=context.scene_assignment,
         )
 
-        for trial_idx in range(trials):
-            trial_spec = trial_table[trial_idx % len(trial_table)] if trial_table else {}
-            iti = random.uniform(float(iti_range[0]), float(iti_range[1]))
-            self.logger.log_event(
-                "trial_start",
-                phase=phase_name,
-                trial_index=trial_idx,
-                iti_sec=round(iti, 4),
-                trial_spec=trial_spec,
-            )
+        phases_cfg = self.config.get("phases", {})
+        for phase_key, phase_cls in phase_sequence:
+            phase_cfg = dict(phases_cfg.get(phase_key, {}))
+            enabled = bool(phase_cfg.pop("enabled", False))
 
-            self._run_trial_stimuli(phase_name, trial_spec, phase_cfg)
+            if not enabled:
+                self.logger.log_event("phase_skipped", phase=phase_key, reason="disabled")
+                continue
 
-            time.sleep(iti)
-            self.logger.log_event("trial_end", phase=phase_name, trial_index=trial_idx)
-
-        self.logger.log_event("phase_end", phase=phase_name)
+            phase = phase_cls(context=context, config=phase_cfg)
+            self.logger.log_event("phase_start", phase=phase.phase_key, display_name=phase.display_name)
+            phase.run()
+            self.logger.log_event("phase_end", phase=phase.phase_key)
 
     def _run_scene_phase(self, phase_name: str, phase_cfg: dict[str, Any]) -> None:
         scene_order = list(phase_cfg.get("scene_order", ["A", "B"]))
