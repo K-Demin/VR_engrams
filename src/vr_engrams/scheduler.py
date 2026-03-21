@@ -42,10 +42,28 @@ PHASE_HANDLERS = {
     "fmri_opto": FMRIOptoPhase,
 }
 
+PHASE_ORDER = ["decoder", "pre", "fear", "post", "fmri"]
+
+PHASE_CLASS_BY_KEY = {
+    DecoderTrainingPhase.phase_key: DecoderTrainingPhase,
+    PreConditioningScenePhase.phase_key: PreConditioningScenePhase,
+    FearConditioningPhase.phase_key: FearConditioningPhase,
+    PostConditioningScenePhase.phase_key: PostConditioningScenePhase,
+    FMRIOptoPhase.phase_key: FMRIOptoPhase,
+}
+
+PHASE_ALIASES = {
+    "decoder_training": "decoder",
+    "pre_conditioning_scene": "pre",
+    "fear_conditioning": "fear",
+    "post_conditioning_scene": "post",
+    "fmri_opto": "fmri",
+}
+
 
 @dataclass
 class ExperimentScheduler:
-    """Sequential phase orchestration controlled entirely by config."""
+    """Sequential phase orchestration using protocol phase classes only."""
 
     config: dict[str, Any]
     stimuli: StimulusController
@@ -54,11 +72,10 @@ class ExperimentScheduler:
     session_assignment: dict[str, Any] | None = None
 
     def run_all_phases(self) -> None:
-        randomization_cfg = dict(self.config.get("randomization", {}))
-        seed = randomization_cfg.get("seed")
+        seed = self._random_seed()
         rng = random.Random(seed)
-
         scene_assignment = self._resolve_scene_assignment(seed)
+
         context = PhaseContext(
             stimuli=self.stimuli,
             logger=self.logger,
@@ -68,42 +85,52 @@ class ExperimentScheduler:
             scene_assignment=scene_assignment,
         )
 
-        phase_sequence: list[tuple[str, type]] = [
-            ("decoder_training", DecoderTrainingPhase),
-            ("pre_conditioning_scene", PreConditioningScenePhase),
-            ("fear_conditioning", FearConditioningPhase),
-            ("post_conditioning_scene", PostConditioningScenePhase),
-            ("fmri_opto", FMRIOptoPhase),
-        ]
+        phase_blocks = self._normalized_phase_blocks()
+
         self.logger.log_event(
             "experiment_start",
-            phase_order=[name for name, _ in phase_sequence],
+            phase_order=PHASE_ORDER,
+            available_phases=sorted(phase_blocks.keys()),
+            random_seed=seed,
             scene_assignment=scene_assignment,
         )
 
-        for phase_name, phase_cls in phase_sequence:
-            phase_cfg = dict(self.config.get("phases", {}).get(phase_name, {}))
-            if not phase_cfg.get("enabled", True):
-                self.logger.log_event("phase_skipped", phase=phase_name)
+        for phase_name in PHASE_ORDER:
+            phase_cfg = phase_blocks.get(phase_name)
+            if phase_cfg is None:
+                self.logger.log_event("phase_skipped", phase=phase_name, reason="missing_config")
+                continue
+            if not bool(phase_cfg.get("enabled", True)):
+                self.logger.log_event("phase_skipped", phase=phase_name, reason="disabled")
                 continue
 
-            self.logger.log_event("phase_start", phase=phase_name)
-            phase_cls(context=context, config=phase_cfg).run()
-            self.logger.log_event("phase_end", phase=phase_name)
+            phase_class = PHASE_CLASS_BY_KEY[phase_name]
+            self.logger.log_event("phase_start", phase=phase_name, phase_class=phase_class.__name__)
+            phase_class(context=context, config=phase_cfg).run()
+            self.logger.log_event("phase_end", phase=phase_name, phase_class=phase_class.__name__)
 
         self.logger.log_event("experiment_complete")
 
-    def _resolve_scene_assignment(self, seed: int | None) -> dict[str, Any]:
-        if self.session_assignment:
-            if "target" in self.session_assignment and "distractor" in self.session_assignment:
-                return {
-                    "target": self.session_assignment["target"],
-                    "distractor": self.session_assignment["distractor"],
-                }
-            if "target_scene" in self.session_assignment and "distractor_scene" in self.session_assignment:
-                return {
-                    "target": self.session_assignment["target_scene"],
-                    "distractor": self.session_assignment["distractor_scene"],
-                }
+    def _random_seed(self) -> int | None:
+        if "random_seed" in self.config:
+            return self.config.get("random_seed")
+        return dict(self.config.get("randomization", {})).get("seed")
 
-        return build_scene_assignment(self.config, seed)
+    def _resolve_scene_assignment(self, seed: int | None) -> dict[str, Any]:
+        if self.session_assignment and {"target_scene", "distractor_scene"}.issubset(self.session_assignment):
+            return {
+                "target": self.session_assignment["target_scene"],
+                "distractor": self.session_assignment["distractor_scene"],
+            }
+        return build_scene_assignment(self.config, rng_seed=seed)
+
+    def _normalized_phase_blocks(self) -> dict[str, dict[str, Any]]:
+        raw_phases = dict(self.config.get("phases", {}))
+        normalized: dict[str, dict[str, Any]] = {}
+
+        for raw_key, raw_value in raw_phases.items():
+            canonical_key = PHASE_ALIASES.get(raw_key, raw_key)
+            if canonical_key in PHASE_CLASS_BY_KEY:
+                normalized[canonical_key] = dict(raw_value)
+
+        return normalized
