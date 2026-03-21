@@ -102,7 +102,7 @@ phases:
 
   pre_conditioning_scene:
     enabled: true
-    scene_key: "target"
+    scene_key: target
     duration_sec: 5.0
     visual_channel_by_scene:
       A: "visual"
@@ -110,7 +110,7 @@ phases:
 
   fear_conditioning:
     enabled: true
-    scene_key: "target"
+    scene_key: target
     visual_channel_by_scene:
       A: "visual"
       B: "visual"
@@ -124,7 +124,7 @@ phases:
 
   post_conditioning_scene:
     enabled: true
-    scene_key: "target"
+    scene_key: distractor
     duration_sec: 5.0
     visual_channel_by_scene:
       A: "visual"

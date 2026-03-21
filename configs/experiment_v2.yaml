@@ -33,39 +33,74 @@ stimuli:
 
 phases:
   decoder:
-    trials: 10
-    iti_sec: [1.0, 2.0]
+    conditions:
+      - "screen_a"
+      - "screen_b"
+      - "sound_a"
+      - "sound_b"
+      - "whisker_a"
+      - "whisker_b"
+      - "no_stim"
+    reps_per_condition: 60
+    event_duration_sec: [2.0, 10.0]
+    iti_sec: [2.0, 10.0]
     randomize_trial_order: true
+    anti_streak_randomization: true
     trial_table:
       - cue_frequency_hz: 8000
         cue_duration_sec: 0.5
   pre-conditioning:
-    trials: 10
-    iti_sec: [1.0, 2.0]
+    blocks_per_condition: 4
     randomize_trial_order: true
-    trial_table:
-      - cue_frequency_hz: 8000
-        cue_duration_sec: 0.5
+    block_table:
+      - condition: "target"
+        duration_sec: 30.0
+      - condition: "non_target"
+        duration_sec: 60.0
+      - condition: "empty"
+        duration_sec: 45.0
+      - condition: "opto_sham"
+        duration_sec: 60.0
   fear conditioning:
-    trials: 5
-    iti_sec: [2.0, 3.0]
     randomize_trial_order: false
+    target_scene_duration_min: [6.0, 8.0]
+    shocks_per_session: [3, 5]
+    shock_spacing_sec: [30.0, 60.0]
     shock_enabled: true
     shock_channel: "shock"
   post-conditioning:
-    trials: 10
-    iti_sec: [1.0, 2.0]
+    blocks_per_condition: 4
     randomize_trial_order: true
+    block_table:
+      - condition: "target"
+        duration_sec: 60.0
+      - condition: "non_target"
+        duration_sec: 60.0
+      - condition: "empty"
+        duration_sec: 45.0
+      - condition: "active_opto"
+        duration_sec: 60.0
   fMRI opto block design:
-    trials: 4
-    iti_sec: [3.0, 4.0]
+    total_duration_sec: 3600
+    on_duration_sec: 30.0
+    off_duration_sec: 30.0
+    repeat_until_total_duration: true
     randomize_trial_order: false
     opto_channel: "opto"
-    opto_duration_sec: 1.0
+    opto_duration_sec: 30.0
 
 randomization:
   seed: null
   strategy: "uniform"
+  dropout:
+    enabled: true
+    interval_sec: 10.0
+    dropped_modalities:
+      - "screen"
+      - "sound"
+      - "whisker"
+    dropout_duration_sec: [2.0, 4.0]
+    allow_multiple_simultaneous_drops: false
 
 logging:
   output_root: "./data"
