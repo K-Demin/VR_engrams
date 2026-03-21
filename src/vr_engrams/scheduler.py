@@ -16,6 +16,31 @@ from .phases import (
     build_scene_assignment,
 )
 from .stimulus_controller import StimulusController
+from .phases.context import PhaseContext
+from .phases.protocol_phases import (
+    DecoderTrainingPhase,
+    FMRIOptoPhase,
+    FearConditioningPhase,
+    PostConditioningScenePhase,
+    PreConditioningScenePhase,
+    build_scene_assignment,
+)
+
+DEFAULT_PHASE_ORDER: tuple[str, ...] = (
+    "decoder_training",
+    "pre_conditioning_scene",
+    "fear_conditioning",
+    "post_conditioning_scene",
+    "fmri_opto",
+)
+
+PHASE_HANDLERS = {
+    "decoder_training": DecoderTrainingPhase,
+    "pre_conditioning_scene": PreConditioningScenePhase,
+    "fear_conditioning": FearConditioningPhase,
+    "post_conditioning_scene": PostConditioningScenePhase,
+    "fmri_opto": FMRIOptoPhase,
+}
 
 
 @dataclass
