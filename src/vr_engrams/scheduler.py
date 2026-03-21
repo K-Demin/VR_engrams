@@ -18,18 +18,25 @@ class ExperimentScheduler:
     stimuli: StimulusController
     logger: ExperimentLogger
     lick_detector: LickDetector | None = None
+    session_assignment: dict[str, Any] | None = None
 
     def run_all_phases(self) -> None:
-        self.logger.log_event("experiment_start", phase_order=PHASE_ORDER)
+        self.logger.log_event(
+            "experiment_start",
+            phase_order=PHASE_ORDER,
+            session_assignment=self.session_assignment,
+        )
         for phase_name in PHASE_ORDER:
             phase_cfg = self.config.get("phases", {}).get(phase_name, {})
             self.run_phase(phase_name, phase_cfg)
         self.logger.log_event("experiment_complete")
 
     def run_phase(self, phase_name: str, phase_cfg: dict[str, Any]) -> None:
-        if phase_name in {"pre-conditioning", "post-conditioning"}:
-            self._run_scene_phase(phase_name, phase_cfg)
-            return
+        target_scene = None
+        distractor_scene = None
+        if self.session_assignment:
+            target_scene = self.session_assignment.get("target_scene")
+            distractor_scene = self.session_assignment.get("distractor_scene")
 
         trials = int(phase_cfg.get("trials", 0))
         iti_range = phase_cfg.get("iti_sec", [1.0, 2.0])
@@ -44,41 +51,28 @@ class ExperimentScheduler:
         ]
 
         self.logger.log_event(
-            "experiment_start",
-            phase_sequence=[phase_key for phase_key, _ in phase_sequence],
-            random_seed=random_seed,
-            scene_assignment=context.scene_assignment,
+            "phase_start",
+            phase=phase_name,
+            trials=trials,
+            randomize_trial_order=shuffled,
+            target_scene=target_scene,
+            distractor_scene=distractor_scene,
         )
 
-        phases_cfg = self.config.get("phases", {})
-        for phase_key, phase_cls in phase_sequence:
-            phase_cfg = dict(phases_cfg.get(phase_key, {}))
-            enabled = bool(phase_cfg.pop("enabled", False))
-
-            if not enabled:
-                self.logger.log_event("phase_skipped", phase=phase_key, reason="disabled")
-                continue
-
-            phase = phase_cls(context=context, config=phase_cfg)
-            self.logger.log_event("phase_start", phase=phase.phase_key, display_name=phase.display_name)
-            phase.run()
-            self.logger.log_event("phase_end", phase=phase.phase_key)
-
-    def _run_scene_phase(self, phase_name: str, phase_cfg: dict[str, Any]) -> None:
-        scene_order = list(phase_cfg.get("scene_order", ["A", "B"]))
-        repetitions = int(phase_cfg.get("scene_repetitions", phase_cfg.get("trials", 1)))
-        scene_duration_sec = float(phase_cfg.get("scene_duration_sec", phase_cfg.get("cue_duration_sec", 10.0)))
-
-        rng_seed = phase_cfg.get("random_seed", self.config.get("random_seed"))
-        scene_engine = SceneEngine(
-            logger=self.logger,
-            phase_name=phase_name,
-            seed=rng_seed,
-            dropout_interval_sec=float(phase_cfg.get("dropout_interval_sec", 10.0)),
-            dropout_interval_jitter_sec=float(phase_cfg.get("dropout_interval_jitter_sec", 1.0)),
-            dropout_duration_min_sec=float(phase_cfg.get("dropout_duration_min_sec", 2.0)),
-            dropout_duration_max_sec=float(phase_cfg.get("dropout_duration_max_sec", 4.0)),
-        )
+        for trial_idx in range(trials):
+            trial_spec = dict(trial_table[trial_idx % len(trial_table)]) if trial_table else {}
+            if target_scene is not None:
+                trial_spec.setdefault("target_scene", target_scene)
+            if distractor_scene is not None:
+                trial_spec.setdefault("distractor_scene", distractor_scene)
+            iti = random.uniform(float(iti_range[0]), float(iti_range[1]))
+            self.logger.log_event(
+                "trial_start",
+                phase=phase_name,
+                trial_index=trial_idx,
+                iti_sec=round(iti, 4),
+                trial_spec=trial_spec,
+            )
 
         self.logger.log_event(
             "phase_start",
