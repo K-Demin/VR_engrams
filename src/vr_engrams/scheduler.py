@@ -7,6 +7,7 @@ from typing import Any
 
 from .lick_detector import LickDetector
 from .logger import ExperimentLogger
+from .scene_engine import SceneEngine
 from .stimulus_controller import StimulusController
 
 PHASE_ORDER = [
@@ -35,6 +36,10 @@ class ExperimentScheduler:
         self.logger.log_event("experiment_complete")
 
     def run_phase(self, phase_name: str, phase_cfg: dict[str, Any]) -> None:
+        if phase_name in {"pre-conditioning", "post-conditioning"}:
+            self._run_scene_phase(phase_name, phase_cfg)
+            return
+
         trials = int(phase_cfg.get("trials", 0))
         iti_range = phase_cfg.get("iti_sec", [1.0, 2.0])
         shuffled = bool(phase_cfg.get("randomize_trial_order", True))
@@ -65,6 +70,43 @@ class ExperimentScheduler:
 
             time.sleep(iti)
             self.logger.log_event("trial_end", phase=phase_name, trial_index=trial_idx)
+
+        self.logger.log_event("phase_end", phase=phase_name)
+
+    def _run_scene_phase(self, phase_name: str, phase_cfg: dict[str, Any]) -> None:
+        scene_order = list(phase_cfg.get("scene_order", ["A", "B"]))
+        repetitions = int(phase_cfg.get("scene_repetitions", phase_cfg.get("trials", 1)))
+        scene_duration_sec = float(phase_cfg.get("scene_duration_sec", phase_cfg.get("cue_duration_sec", 10.0)))
+
+        rng_seed = phase_cfg.get("random_seed", self.config.get("random_seed"))
+        scene_engine = SceneEngine(
+            logger=self.logger,
+            phase_name=phase_name,
+            seed=rng_seed,
+            dropout_interval_sec=float(phase_cfg.get("dropout_interval_sec", 10.0)),
+            dropout_interval_jitter_sec=float(phase_cfg.get("dropout_interval_jitter_sec", 1.0)),
+            dropout_duration_min_sec=float(phase_cfg.get("dropout_duration_min_sec", 2.0)),
+            dropout_duration_max_sec=float(phase_cfg.get("dropout_duration_max_sec", 4.0)),
+        )
+
+        self.logger.log_event(
+            "phase_start",
+            phase=phase_name,
+            scene_order=scene_order,
+            scene_repetitions=repetitions,
+            scene_duration_sec=scene_duration_sec,
+        )
+
+        condition_index = 0
+        for repetition in range(repetitions):
+            for scene_label in scene_order:
+                scene_engine.run_condition(
+                    scene_label=scene_label,
+                    condition_index=condition_index,
+                    repetition=repetition,
+                    duration_sec=scene_duration_sec,
+                )
+                condition_index += 1
 
         self.logger.log_event("phase_end", phase=phase_name)
 
