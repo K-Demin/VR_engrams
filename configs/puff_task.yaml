@@ -11,20 +11,26 @@ timing:
   iti_max: 6.0           # maximum ITI in seconds
   audio_duration: 0.5    # audio cue duration in seconds
   delay: 1.5             # delay between audio offset and puff
-  puff_duration: 0.05    # puff duration in seconds (50ms)
+  puff_duration: 0.05    # puff TTL width in seconds
   response_window: 0.8   # seconds to lick after puff
   timeout: 5.0           # penalty timeout after early lick
 
 hardware:
-  puff_channel: "Dev1/port0/line5"
+  # Static / software-controlled lines (state held until changed by software):
+  puff_channel: "Dev1/port0/line5"      # digital line for puff TTL one-shot
   lick_channel: "Dev1/port0/line1"
+
+  # Hardware-timed digital output settings (used when device supports DO sample clock):
+  do_sample_rate_hz: 10000
+
+  # Hardware-timed counter output for optogenetic trains:
+  # 20 Hz pulse train with 15 ms pulse width by default.
+  opto_counter_channel: "Dev1/ctr0"
+  opto_freq_hz: 20.0
+  opto_pulse_width_s: 0.015
+
   puff_side: "right"     # which side the puff is delivered - easy trials play audio here
 
 audio:
   left_freq: 8000        # Hz - 8kHz, well within mouse hearing sweet spot
   right_freq: 16000      # Hz - 16kHz, one octave above left, clearly distinct
-
-
-
-
-
