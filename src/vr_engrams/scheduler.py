@@ -1,26 +1,18 @@
 from __future__ import annotations
 
 import random
-import time
 from dataclasses import dataclass
 from typing import Any
 
 from .lick_detector import LickDetector
 from .logger import ExperimentLogger
+from .scene_engine import SceneEngine
 from .stimulus_controller import StimulusController
-
-PHASE_ORDER = [
-    "decoder",
-    "pre-conditioning",
-    "fear conditioning",
-    "post-conditioning",
-    "fMRI opto block design",
-]
 
 
 @dataclass
 class ExperimentScheduler:
-    """Phase orchestration and trial randomization rules."""
+    """Sequential phase orchestration controlled entirely by config flags."""
 
     config: dict[str, Any]
     stimuli: StimulusController
@@ -50,9 +42,13 @@ class ExperimentScheduler:
         iti_range = phase_cfg.get("iti_sec", [1.0, 2.0])
         shuffled = bool(phase_cfg.get("randomize_trial_order", True))
 
-        trial_table = list(phase_cfg.get("trial_table", []))
-        if trial_table and shuffled:
-            random.shuffle(trial_table)
+        phase_sequence = [
+            ("decoder_training", DecoderTrainingPhase),
+            ("pre_conditioning_scene", PreConditioningScenePhase),
+            ("fear_conditioning", FearConditioningPhase),
+            ("post_conditioning_scene", PostConditioningScenePhase),
+            ("fmri_opto", FMRIOptoPhase),
+        ]
 
         self.logger.log_event(
             "phase_start",
@@ -78,10 +74,24 @@ class ExperimentScheduler:
                 trial_spec=trial_spec,
             )
 
-            self._run_trial_stimuli(phase_name, trial_spec, phase_cfg)
+        self.logger.log_event(
+            "phase_start",
+            phase=phase_name,
+            scene_order=scene_order,
+            scene_repetitions=repetitions,
+            scene_duration_sec=scene_duration_sec,
+        )
 
-            time.sleep(iti)
-            self.logger.log_event("trial_end", phase=phase_name, trial_index=trial_idx)
+        condition_index = 0
+        for repetition in range(repetitions):
+            for scene_label in scene_order:
+                scene_engine.run_condition(
+                    scene_label=scene_label,
+                    condition_index=condition_index,
+                    repetition=repetition,
+                    duration_sec=scene_duration_sec,
+                )
+                condition_index += 1
 
         self.logger.log_event("phase_end", phase=phase_name)
 

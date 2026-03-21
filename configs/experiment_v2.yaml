@@ -1,0 +1,78 @@
+daq:
+  enabled: true
+
+channels:
+  digital_outputs:
+    puff: "Dev1/port0/line5"
+    shock: "Dev1/port0/line7"
+    opto: "Dev1/port1/line0"
+  digital_inputs:
+    lick: "Dev1/port0/line1"
+  counter_outputs:
+    # Optional section for future pulse-train outputs.
+    laser_clock: "Dev1/ctr0"
+
+stimuli:
+  audio:
+    cue_duration_sec: 0.5
+    default_frequency_hz: 8000
+  visual:
+    trigger_output_name: "visual"
+    duration_sec: 0.2
+  whisker:
+    output_name: "puff"
+    duration_sec: 0.05
+  shock:
+    output_name: "shock"
+    duration_sec: 0.2
+    amplitude_mA: 0.0
+  opto:
+    output_name: "opto"
+    duration_sec: 1.0
+    power_mw: 0.0
+
+phases:
+  decoder:
+    trials: 10
+    iti_sec: [1.0, 2.0]
+    randomize_trial_order: true
+    trial_table:
+      - cue_frequency_hz: 8000
+        cue_duration_sec: 0.5
+  pre-conditioning:
+    trials: 10
+    iti_sec: [1.0, 2.0]
+    randomize_trial_order: true
+    trial_table:
+      - cue_frequency_hz: 8000
+        cue_duration_sec: 0.5
+  fear conditioning:
+    trials: 5
+    iti_sec: [2.0, 3.0]
+    randomize_trial_order: false
+    shock_enabled: true
+    shock_channel: "shock"
+  post-conditioning:
+    trials: 10
+    iti_sec: [1.0, 2.0]
+    randomize_trial_order: true
+  fMRI opto block design:
+    trials: 4
+    iti_sec: [3.0, 4.0]
+    randomize_trial_order: false
+    opto_channel: "opto"
+    opto_duration_sec: 1.0
+
+randomization:
+  seed: null
+  strategy: "uniform"
+
+logging:
+  output_root: "./data"
+
+session:
+  name: "vr_engrams_v2"
+  lick_input_name: "lick"
+  reward_output_name: "puff"
+  reward_on_lick: false
+  lick_poll_interval_sec: 0.005

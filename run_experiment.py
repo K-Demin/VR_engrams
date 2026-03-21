@@ -65,7 +65,15 @@ def main() -> None:
     output_root = Path(config.get("output_root", "./data"))
     logger = ExperimentLogger(root_dir=output_root, animal_id=args.animal_id, config=config, run_name="vr_engrams")
 
-    daq = DaqController(enabled=bool(config.get("daq", {}).get("enabled", True)))
+    daq_cfg = config.get("daq", {})
+    daq = DaqController(
+        enabled=bool(daq_cfg.get("enabled", True)),
+        do_sample_rate_hz=float(daq_cfg.get("do_sample_rate_hz", 10_000.0)),
+        allow_software_fallback=bool(daq_cfg.get("allow_software_fallback", False)),
+        opto_counter_channel=daq_cfg.get("opto_counter_channel"),
+        opto_freq_hz=float(daq_cfg.get("opto_freq_hz", 20.0)),
+        opto_pulse_width_s=float(daq_cfg.get("opto_pulse_width_s", 0.015)),
+    )
     channels = config.get("channels", {})
     for logical_name, channel in channels.get("digital_outputs", {}).items():
         daq.create_digital_output(logical_name, channel)
@@ -78,7 +86,7 @@ def main() -> None:
     reward_duration = float(config.get("reward", {}).get("duration_sec", 0.05))
 
     def reward_callback() -> None:
-        stimuli.deliver_puff(reward_channel, reward_duration)
+        stimuli.trigger_reward_valve(reward_channel, reward_duration)
 
     lick_detector = LickDetector(
         daq=daq,
