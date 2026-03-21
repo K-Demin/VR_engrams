@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
@@ -13,6 +14,7 @@ SRC_ROOT = REPO_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from assignment import assign_target_scene
 from vr_engrams.daq_controller import DaqController
 from vr_engrams.lick_detector import LickDetector
 from vr_engrams.logger import ExperimentLogger
@@ -32,6 +34,33 @@ def main() -> None:
 
     with open(args.config, "r", encoding="utf-8") as handle:
         config = yaml.safe_load(handle)
+
+    assignment_cfg = (
+        config.get("randomization_constraints", {}).get("mouse_level_scene_assignment", {})
+    )
+    strategy = assignment_cfg.get("strategy", "deterministic_hash")
+    allowed = assignment_cfg.get("target_scene_set", ["A", "B"])
+    seed = assignment_cfg.get("seed")
+
+    target_scene = assign_target_scene(
+        mouse_id=args.animal_id,
+        strategy=strategy,
+        seed=seed,
+        allowed=allowed,
+    )
+    distractor_scene = next((scene for scene in allowed if scene != target_scene), None)
+
+    session_assignment = {
+        "mouse_id": args.animal_id,
+        "strategy": strategy,
+        "seed": seed,
+        "allowed_scenes": list(allowed),
+        "target_scene": target_scene,
+        "distractor_scene": distractor_scene,
+        "assigned_at_utc": datetime.now(timezone.utc).isoformat(),
+    }
+    config.setdefault("session_metadata", {})
+    config["session_metadata"]["scene_assignment"] = session_assignment
 
     output_root = Path(config.get("output_root", "./data"))
     logger = ExperimentLogger(root_dir=output_root, animal_id=args.animal_id, config=config, run_name="vr_engrams")
@@ -59,11 +88,18 @@ def main() -> None:
         poll_interval_sec=float(config.get("lick", {}).get("poll_interval_sec", 0.005)),
     )
 
-    scheduler = ExperimentScheduler(config=config, stimuli=stimuli, logger=logger, lick_detector=lick_detector)
+    scheduler = ExperimentScheduler(
+        config=config,
+        stimuli=stimuli,
+        logger=logger,
+        lick_detector=lick_detector,
+        session_assignment=session_assignment,
+    )
 
     reward_on_lick = bool(config.get("lick", {}).get("reward_on_lick", False))
 
     try:
+        logger.log_event("session_assignment", **session_assignment)
         lick_detector.start(reward_on_lick=reward_on_lick)
         scheduler.run_all_phases()
     finally:

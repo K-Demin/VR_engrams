@@ -26,15 +26,26 @@ class ExperimentScheduler:
     stimuli: StimulusController
     logger: ExperimentLogger
     lick_detector: LickDetector | None = None
+    session_assignment: dict[str, Any] | None = None
 
     def run_all_phases(self) -> None:
-        self.logger.log_event("experiment_start", phase_order=PHASE_ORDER)
+        self.logger.log_event(
+            "experiment_start",
+            phase_order=PHASE_ORDER,
+            session_assignment=self.session_assignment,
+        )
         for phase_name in PHASE_ORDER:
             phase_cfg = self.config.get("phases", {}).get(phase_name, {})
             self.run_phase(phase_name, phase_cfg)
         self.logger.log_event("experiment_complete")
 
     def run_phase(self, phase_name: str, phase_cfg: dict[str, Any]) -> None:
+        target_scene = None
+        distractor_scene = None
+        if self.session_assignment:
+            target_scene = self.session_assignment.get("target_scene")
+            distractor_scene = self.session_assignment.get("distractor_scene")
+
         trials = int(phase_cfg.get("trials", 0))
         iti_range = phase_cfg.get("iti_sec", [1.0, 2.0])
         shuffled = bool(phase_cfg.get("randomize_trial_order", True))
@@ -48,10 +59,16 @@ class ExperimentScheduler:
             phase=phase_name,
             trials=trials,
             randomize_trial_order=shuffled,
+            target_scene=target_scene,
+            distractor_scene=distractor_scene,
         )
 
         for trial_idx in range(trials):
-            trial_spec = trial_table[trial_idx % len(trial_table)] if trial_table else {}
+            trial_spec = dict(trial_table[trial_idx % len(trial_table)]) if trial_table else {}
+            if target_scene is not None:
+                trial_spec.setdefault("target_scene", target_scene)
+            if distractor_scene is not None:
+                trial_spec.setdefault("distractor_scene", distractor_scene)
             iti = random.uniform(float(iti_range[0]), float(iti_range[1]))
             self.logger.log_event(
                 "trial_start",
