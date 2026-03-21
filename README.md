@@ -1,6 +1,66 @@
 # VR Engrams Puff Task
 
-This repository runs a head-fixed behavioural pipeline with NI-driven stimuli and synchronized camera acquisition.
+This repository currently supports two execution paths:
+
+- **Legacy pipeline (legacy/maintenance-only):** `main_pipeline.py` with legacy config formats.
+- **v2 pipeline (production protocol path):** `run_experiment_v2.py` with `configs/experiment_v2.yaml`.
+
+## Canonical run command (v2 production)
+
+```bash
+python run_experiment_v2.py configs/experiment_v2.yaml --animal-id M001
+```
+
+## Legacy pipeline status (legacy)
+
+The following commands remain available for backward compatibility and historical experiments, but they are **legacy** and not the recommended production path:
+
+```bash
+python main_pipeline.py configs/experiment.yaml --animal m01
+python main_pipeline.py configs/puff_task.yaml --animal m01
+```
+
+## v2 quick-start
+
+1. Connect NI-DAQ hardware and verify the device name(s) used in config (for example `Dev1`).
+2. Open and edit `configs/experiment_v2.yaml` for the current session.
+3. Run the canonical command:
+   ```bash
+   python run_experiment_v2.py configs/experiment_v2.yaml --animal-id M001
+   ```
+4. Confirm session output appears under `logging.output_root` (default `./data`).
+
+## What to edit before each run (top 10 parameters)
+
+Edit these first in `configs/experiment_v2.yaml`:
+
+1. **Phase repetitions (decoder):** `phases.decoder.trials`
+2. **Phase repetitions (pre-conditioning):** `phases.pre-conditioning.trials`
+3. **Phase repetitions (fear conditioning):** `phases.fear conditioning.trials`
+4. **Phase repetitions (post-conditioning):** `phases.post-conditioning.trials`
+5. **Phase repetitions (fMRI opto block):** `phases.fMRI opto block design.trials`
+6. **Timing / shock spacing via ITI:** `phases.fear conditioning.iti_sec`
+7. **Puff duration:** `stimuli.whisker.duration_sec`
+8. **Shock duration:** `stimuli.shock.duration_sec`
+9. **Reward valve pulse width (ms):** set reward pulse timing in the hardware/config path used for reward delivery (convert ms to seconds where applicable).
+10. **Opto train controls:** `phases.fMRI opto block design.opto_duration_sec` and hardware train settings in DAQ (counter frequency/pulse width) when applicable.
+
+### Channel mapping fields to verify while editing
+
+- `channels.digital_inputs.lick`
+- `channels.digital_outputs.puff`
+- `channels.digital_outputs.shock`
+- `channels.digital_outputs.opto`
+- `channels.counter_outputs.laser_clock`
+
+## Preflight checklist
+
+Before clicking run:
+
+- [ ] **NI device connected:** NI-DAQ is visible and channel strings resolve on this machine.
+- [ ] **Channels valid:** All configured DI/DO/counter channels exist and are not reserved by other tasks.
+- [ ] **Displays mapped:** Visual display / trigger mapping is correct for the intended monitor/projector.
+- [ ] **Laser arm state correct:** Laser/opto source is armed only when intended and interlocks are satisfied.
 
 ## Hardware overview
 
@@ -57,20 +117,6 @@ This prevents within-session scene remapping while balancing assignment across m
 | Response window (within acquisition) | 0.8 s | Lick detection window |
 | Timeout (early lick) | 5.0 s | Penalty period |
 | Extinction | disabled (0 trials) | Reserved optional phase |
-
-## Run commands
-
-Primary run command (new grouped config):
-
-```bash
-python main_pipeline.py configs/experiment.yaml --animal m01
-```
-
-Legacy config remains supported:
-
-```bash
-python main_pipeline.py configs/puff_task.yaml --animal m01
-```
 
 ## Expected output files
 
