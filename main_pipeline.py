@@ -137,7 +137,24 @@ logger = TrialLogger(
 # =======================================================
 # Task setup
 # =======================================================
-task = PuffTaskFSM(config, puff, audio, lick, logger)
+task = PuffTaskFSM(config, puff, audio, None, logger)
+
+
+lick = LickDetector(
+    sensor_channel=config["hardware"]["lick_channel"],
+    logger=logger,
+    threshold=config["hardware"].get("lick_threshold", 0.5),
+    logic_mode=config["hardware"].get("lick_logic_mode", "high_is_lick"),
+    refractory_sec=config["hardware"].get("lick_refractory_sec", 0.05),
+    sample_interval_sec=config["hardware"].get("lick_sample_interval_sec", 0.001),
+    valve_channel=config["hardware"].get("valve_channel"),
+    valve_open_duration_sec=config["hardware"].get("valve_open_duration", 0.04),
+    reward_on_lick=config["hardware"].get("reward_on_lick", False),
+    trial_provider=lambda: task.trial,
+    phase_provider=lambda: task.state,
+)
+
+task.lick = lick
 
 # =======================================================
 # Run experiment
@@ -151,11 +168,13 @@ try:
         )
 
     logger.start_session()
+    lick.start()
     print("Running behavioural task...")
     task.run()
 
 finally:
     print("Stopping camera acquisition...")
     stop_camera()
+    lick.stop()
     logger.close()
     print("Experiment finished")

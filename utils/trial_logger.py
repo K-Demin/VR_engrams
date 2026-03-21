@@ -15,6 +15,7 @@ Created on Fri Mar  6 16:34:48 2026
 import csv
 import hashlib
 import os
+import threading
 import time
 from datetime import datetime
 
@@ -37,6 +38,8 @@ class TrialLogger:
         """
         self.animal_id          = animal_id
         self.session_start_time = None
+        self._session_start_perf = None
+        self._lock = threading.Lock()
 
         if session_path is not None:
             self.session_path = session_path
@@ -107,7 +110,14 @@ class TrialLogger:
     def start_session(self):
         """Call this immediately before the task starts to set t=0."""
         self.session_start_time = time.time()
-        self.log({"event": "session_start", "trial": -1})
+        self._session_start_perf = time.perf_counter()
+        self.log({"event": "session_start", "trial": -1, "phase": "session"})
+
+    def now_sec(self) -> float:
+        """High-resolution elapsed time from session start."""
+        if self._session_start_perf is None:
+            return 0.0
+        return time.perf_counter() - self._session_start_perf
 
     def log(self, data: dict):
         """
@@ -119,25 +129,30 @@ class TrialLogger:
             Must contain "event". Optional keys: "trial", any others
             are serialised into the "detail" column as key=value pairs.
         """
-        if self.session_start_time is None:
-            timestamp = 0.0
-        else:
-            timestamp = time.time() - self.session_start_time
+        timestamp = data.get("timestamp_sec")
+        if timestamp is None:
+            timestamp = self.now_sec()
 
         event  = data.get("event", "unknown")
         trial  = data.get("trial", "")
 
         # Everything except event and trial goes into detail column
-        detail_keys = {k: v for k, v in data.items() if k not in ("event", "trial")}
+        detail_keys = {k: v for k, v in data.items() if k not in ("event", "trial", "timestamp_sec")}
         detail = " ".join(f"{k}={v}" for k, v in detail_keys.items())
 
-        self._csv_writer.writerow([
-            f"{timestamp:.4f}",
-            event,
-            trial,
-            detail
-        ])
-        self._log_file.flush()   # write immediately — safe against crashes
+        if isinstance(timestamp, str):
+            ts_value = timestamp
+        else:
+            ts_value = f"{float(timestamp):.6f}"
+
+        with self._lock:
+            self._csv_writer.writerow([
+                ts_value,
+                event,
+                trial,
+                detail
+            ])
+            self._log_file.flush()   # write immediately — safe against crashes
 
     # ------------------------------------------------------------------
     # Cleanup

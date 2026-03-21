@@ -1,29 +1,17 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Fri Mar  6 16:33:29 2026
+"""Puff controller backed by DAQ-layer trigger helpers."""
 
-@author: JoshB
-"""
+from hardware.daq_controller import DaqController
 
-import nidaqmx
-import time
+
+from typing import Optional
+
 
 class PuffController:
 
-    def __init__(self, channel):
-
+    def __init__(self, channel, daq: Optional[DaqController] = None):
         self.channel = channel
+        self.daq = daq or DaqController()
 
     def puff(self, duration):
-
-        with nidaqmx.Task() as task:
-
-            task.do_channels.add_do_chan(self.channel)
-
-            task.write(False)
-            time.sleep(0.005)
-
-            task.write(True)
-            time.sleep(duration)
-
-            task.write(False)
+        self.daq.pulse_digital_one_shot(self.channel, duration)
