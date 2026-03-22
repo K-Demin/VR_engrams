@@ -18,6 +18,7 @@ class ExperimentLogger:
     animal_id: str
     config: dict[str, Any]
     run_name: str = "run"
+    console_echo: bool = True
     _start_time: float = field(default_factory=time.perf_counter, init=False)
     _event_file: Any = field(default=None, init=False)
 
@@ -36,15 +37,22 @@ class ExperimentLogger:
             yaml.safe_dump(self.config, handle, sort_keys=False)
 
     def log_event(self, event: str, **fields: Any) -> None:
+        elapsed_sec = round(time.perf_counter() - self._start_time, 6)
         record = {
             "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-            "elapsed_sec": round(time.perf_counter() - self._start_time, 6),
+            "elapsed_sec": elapsed_sec,
             "animal_id": self.animal_id,
             "event": event,
             "fields": fields,
         }
         self._event_file.write(json.dumps(record) + "\n")
         self._event_file.flush()
+        if self.console_echo:
+            detail = ", ".join(f"{key}={value}" for key, value in fields.items())
+            if detail:
+                print(f"[{elapsed_sec:8.3f}s] {event}: {detail}", flush=True)
+            else:
+                print(f"[{elapsed_sec:8.3f}s] {event}", flush=True)
 
     def close(self) -> None:
         if self._event_file and not self._event_file.closed:
