@@ -7,11 +7,13 @@ from pathlib import Path
 from assignment import assign_target_scene
 
 from .config_v2 import load_experiment_v2_config
+from .audio_engine import AudioEngine
 from .daq_controller import DaqController
 from .lick_detector import LickDetector
 from .logger import ExperimentLogger
 from .scheduler import ExperimentScheduler
 from .stimulus_controller import StimulusController
+from .visual_engine import VisualEngine
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -56,7 +58,12 @@ def main() -> None:
     )
     logger.log_event("session_assignment", **session_assignment)
 
-    daq = DaqController(enabled=bool(config["daq"]["enabled"]))
+    daq = DaqController(
+        enabled=bool(config["daq"]["enabled"]),
+        opto_counter_channel=config.get("channels", {}).get("counter_outputs", {}).get("laser_clock"),
+        opto_freq_hz=float(config["stimuli"]["opto"].get("frequency_hz", 20.0)),
+        opto_pulse_width_s=float(config["stimuli"]["opto"].get("pulse_width_sec", 0.015)),
+    )
 
     for logical_name, channel in config["channels"]["digital_outputs"].items():
         daq.create_digital_output(logical_name, channel)
@@ -65,16 +72,30 @@ def main() -> None:
 
     if config["channels"].get("counter_outputs"):
         logger.log_event(
-            "counter_outputs_declared_but_not_configured",
+            "counter_outputs_configured",
             counter_outputs=config["channels"]["counter_outputs"],
         )
 
-    stimuli = StimulusController(daq=daq, logger=logger)
+    audio_cfg = dict(config.get("stimuli", {}).get("audio", {}))
+    visual_cfg = dict(config.get("stimuli", {}).get("visual", {}))
+    audio_engine = AudioEngine(
+        enabled=bool(audio_cfg.get("enabled", False)),
+        samplerate=int(audio_cfg.get("samplerate_hz", 48_000)),
+        device=audio_cfg.get("device"),
+    )
+    visual_engine = VisualEngine(
+        enabled=bool(visual_cfg.get("use_psychopy", False)),
+        screen_index=int(visual_cfg.get("screen_index", 1)),
+        fullscreen=bool(visual_cfg.get("fullscreen", True)),
+        width=int(visual_cfg.get("width", 1920)),
+        height=int(visual_cfg.get("height", 1080)),
+    )
+    stimuli = StimulusController(daq=daq, logger=logger, audio_engine=audio_engine, visual_engine=visual_engine)
 
     def reward_callback() -> None:
-        stimuli.deliver_puff(
+        stimuli.trigger_reward_valve(
             channel=config["session"]["reward_output_name"],
-            duration_sec=float(config["stimuli"]["whisker"].get("duration_sec", 0.05)),
+            duration_sec=float(config["stimuli"].get("reward_valve", {}).get("duration_sec", 0.05)),
         )
 
     lick_detector = LickDetector(
@@ -98,6 +119,10 @@ def main() -> None:
         scheduler.run_all_phases()
     finally:
         lick_detector.stop()
+        if stimuli.audio_engine is not None:
+            stimuli.audio_engine.stop()
+        if stimuli.visual_engine is not None:
+            stimuli.visual_engine.close()
         daq.close()
         logger.close()
 
