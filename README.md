@@ -72,9 +72,11 @@ Before clicking run:
   - Air puff TTL is sent through an NI digital output line.
   - Puff duration and side are controlled from config.
 - **Sound subsystem**
-  - Left/right tones are played through `sounddevice` according to trial rules.
+  - Tone A/B can be played through `sounddevice` backend (`stimuli.audio.enabled: true`).
+  - Fallback mode logs and sleeps when audio dependencies are unavailable.
 - **Visual subsystem**
-  - Visual trigger/display metadata is configured for scene A/B experiments.
+  - PsychoPy screen rendering is supported (`stimuli.visual.use_psychopy: true`).
+  - `stimuli.visual.screen_index` selects which monitor/screen receives VR scene rendering.
 - **Shock subsystem**
   - Shock channel exists in config and can be enabled/disabled per protocol.
 - **Optogenetics subsystem**
@@ -92,6 +94,7 @@ The v2 scheduler runs the following phases in order:
 5. `fMRI opto block design` (30 s on/off style hardware-timed opto blocks)
 
 Phase keys in YAML are normalized to canonical internal names (`decoder`, `pre`, `fear`, `post`, `fmri`) so both legacy and descriptive names are accepted.
+Dropout timing is driven by `randomization.dropout.*` (interval, modalities, duration range).
 
 ## NI channel mapping and calibration notes
 
@@ -127,17 +130,15 @@ For the v2 path, use these corresponding fields in `configs/experiment_v2.yaml`:
 
 This prevents within-session scene remapping while balancing assignment across mice.
 
-## Phase-by-phase protocol defaults
+## Phase-by-phase protocol defaults (v2 engram workflow)
 
 | Phase | Default duration / count | Purpose |
 |---|---:|---|
-| Baseline | 15 s, 1 repetition | Quiet pre-task imaging period |
-| Acquisition | 40 trials | Main task with audio cue, delay, puff, response window |
-| ITI (within acquisition) | 2.0–6.0 s | Variable inter-trial interval |
-| Cue delay (within acquisition) | 1.5 s | No-lick period after cue |
-| Response window (within acquisition) | 0.8 s | Lick detection window |
-| Timeout (early lick) | 5.0 s | Penalty period |
-| Extinction | disabled (0 trials) | Reserved optional phase |
+| Decoder | 60 reps/condition, 2–10 s event + 2–10 s ITI | Isolated modality representations |
+| Pre-conditioning | 4 blocks/condition | Baseline target/non-target/empty/opto-sham |
+| Fear conditioning | 6–8 min scene, 3–5 shocks | Target scene + aversive pairing |
+| Post-conditioning | 4 blocks/condition | Re-test + active opto condition |
+| fMRI opto | 30 s ON / 30 s OFF for 1 h | Block-design opto-only protocol |
 
 ## Expected output files
 

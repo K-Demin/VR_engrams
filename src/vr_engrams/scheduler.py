@@ -102,6 +102,10 @@ class ExperimentScheduler:
                 self.logger.log_event("phase_skipped", phase=phase_name, reason="disabled")
                 continue
 
+            phase_cfg = dict(phase_cfg)
+            phase_cfg.setdefault("_randomization", dict(self.config.get("randomization", {})))
+            phase_cfg.setdefault("_stimuli", dict(self.config.get("stimuli", {})))
+
             phase_class = PHASE_CLASS_BY_KEY[phase_name]
             self.logger.log_event("phase_start", phase=phase_name, phase_class=phase_class.__name__)
             phase_class(context=context, config=phase_cfg).run()
