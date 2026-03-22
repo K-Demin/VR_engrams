@@ -13,8 +13,8 @@ from typing import Any
 class DaqController:
     """NI-DAQ helper for digital pulses, opto trains, and digital input reads.
 
-    Hardware-first policy:
-    - shock/puff/reward valve pulses use hardware-timed finite digital waveform when possible.
+    Pulse policy:
+    - shock/puff/reward valve pulses use OnDemand digital writes (Python-timed pulse width).
     - opto train uses NI counter output (20 Hz, 15 ms defaults).
     - software fallback exists only if `allow_software_fallback` is True.
     """
@@ -98,49 +98,23 @@ class DaqController:
         return self._pulse_do_channel(channel=name, duration_sec=duration_sec, event_name=event_name)
 
     def _pulse_do_channel(self, channel: str, duration_sec: float, event_name: str, named_task: Any | None = None) -> str:
-        # Attempt hardware-timed finite digital waveform (2 samples).
         try:
-            with self._nidaqmx.Task() as hw_task:
-                hw_task.do_channels.add_do_chan(channel)
-                samples = max(2, int(round(duration_sec * self.do_sample_rate_hz)) + 1)
-                hw_task.timing.cfg_samp_clk_timing(
-                    rate=self.do_sample_rate_hz,
-                    sample_mode=self._acquisition_type.FINITE,
-                    samps_per_chan=samples,
-                )
-                waveform = [True] * (samples - 1) + [False]
-                hw_task.write(waveform, auto_start=False)
-                hw_task.start()
-                hw_task.wait_until_done(timeout=max(1.0, duration_sec + 0.5))
-
-            if named_task is not None:
-                named_task.write(False)
-            self._logger.info("%s pulse path=hardware_timed", event_name)
-            return "hardware_timed"
+            self._pulse_on_demand(channel=channel, duration_sec=duration_sec, named_task=named_task)
+            self._logger.info("%s pulse path=on_demand channel=%s duration_sec=%s", event_name, channel, duration_sec)
+            return "on_demand"
         except Exception as exc:
-            # Common NI-DAQ case on static DIO lines: only OnDemand timing is supported.
-            # DAQmx error -200077 => requested sample clock timing not supported.
-            if getattr(exc, "error_code", None) == -200077:
-                self._logger.warning(
-                    "%s pulse path=on_demand_device_limited reason=do_sample_clock_unsupported error=%s",
-                    event_name,
-                    exc,
-                )
-                self._pulse_on_demand(channel=channel, duration_sec=duration_sec, named_task=named_task)
-                return "on_demand_device_limited"
-
             if not self.allow_software_fallback:
                 self._logger.error(
-                    "%s pulse path=hardware_timed_failed fallback=disabled error=%s",
+                    "%s pulse path=on_demand_failed fallback=disabled error=%s",
                     event_name,
                     exc,
                 )
                 raise RuntimeError(
-                    f"{event_name} pulse failed on hardware-timed path and allow_software_fallback=False"
+                    f"{event_name} pulse failed on on-demand path and allow_software_fallback=False"
                 ) from exc
 
             self._logger.warning(
-                "%s pulse path=fallback_software reason=hardware_timed_failure error=%s",
+                "%s pulse path=fallback_software reason=on_demand_failure error=%s",
                 event_name,
                 exc,
             )

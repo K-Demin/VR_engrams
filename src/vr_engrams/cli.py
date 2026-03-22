@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -26,6 +27,10 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = _build_parser().parse_args()
     config = load_experiment_v2_config(args.config)
+    logging.basicConfig(
+        level=getattr(logging, str(config.get("logging", {}).get("python_log_level", "INFO")).upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+    )
 
     randomization_cfg = dict(config.get("randomization", {}))
     strategy = randomization_cfg.get("strategy", "deterministic_hash")
@@ -55,6 +60,7 @@ def main() -> None:
         animal_id=args.animal_id,
         config=config,
         run_name=config["session"].get("name", "vr_engrams_v2"),
+        console_echo=bool(config.get("logging", {}).get("console_echo", True)),
     )
     logger.log_event("session_assignment", **session_assignment)
 

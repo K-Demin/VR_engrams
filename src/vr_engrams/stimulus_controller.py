@@ -29,7 +29,7 @@ class StimulusController:
             "digital_output_names": configured_outputs,
             "opto_counter_channel": self.daq.opto_counter_channel,
             "timing_policy": {
-                "shock": {"preferred_path": "hardware_timed", "allow_software_fallback": self.daq.allow_software_fallback},
+                "shock": {"preferred_path": "on_demand", "allow_software_fallback": self.daq.allow_software_fallback},
                 "opto": {
                     "preferred_path": "hardware_timed_counter",
                     "allow_software_fallback": False,
