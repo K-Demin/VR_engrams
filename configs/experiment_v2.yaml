@@ -22,12 +22,11 @@ stimuli:
     sound_a_frequency_hz: 8000
     sound_b_frequency_hz: 12000
   visual:
-    use_psychopy: false
+    use_psychopy: true
     screen_index: 1
     fullscreen: true
     width: 1920
     height: 1080
-    trigger_output_name: "visual"
     duration_sec: 0.2
   whisker:
     output_name: "puff"

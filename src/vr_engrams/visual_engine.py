@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
+import time
 
 
 @dataclass
@@ -18,27 +18,34 @@ class VisualEngine:
         self._visual = None
         self._core = None
         self._window = None
+        self.init_error: str | None = None
         if not self.enabled:
+            self.init_error = "disabled_by_config"
             return
         try:
             from psychopy import core, visual  # type: ignore
-        except Exception:
+        except Exception as exc:
             self.enabled = False
+            self.init_error = f"psychopy_import_failed: {exc}"
             return
         self._visual = visual
         self._core = core
-        self._window = visual.Window(
-            size=[self.width, self.height],
-            fullscr=self.fullscreen,
-            units="pix",
-            screen=self.screen_index,
-            allowGUI=False,
-            color=[-1, -1, -1],
-        )
+        try:
+            self._window = visual.Window(
+                size=[self.width, self.height],
+                fullscr=self.fullscreen,
+                units="pix",
+                screen=self.screen_index,
+                allowGUI=False,
+                color=[-1, -1, -1],
+            )
+        except Exception as exc:
+            self.enabled = False
+            self.init_error = f"psychopy_window_failed: {exc}"
+            return
 
     def present(self, stimulus: str, duration_sec: float) -> bool:
         if not self.enabled or self._visual is None or self._window is None:
-            time.sleep(duration_sec)
             return False
 
         if stimulus == "screen_a":
@@ -67,7 +74,6 @@ class VisualEngine:
                 self._window.flip()
             return True
 
-        time.sleep(duration_sec)
         return False
 
     def close(self) -> None:
