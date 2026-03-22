@@ -6,16 +6,6 @@ from typing import Any
 
 from .lick_detector import LickDetector
 from .logger import ExperimentLogger
-from .phases import (
-    DecoderTrainingPhase,
-    FMRIOptoPhase,
-    FearConditioningPhase,
-    PhaseContext,
-    PostConditioningScenePhase,
-    PreConditioningScenePhase,
-    build_scene_assignment,
-)
-from .stimulus_controller import StimulusController
 from .phases.context import PhaseContext
 from .phases.protocol_phases import (
     DecoderTrainingPhase,
@@ -25,6 +15,7 @@ from .phases.protocol_phases import (
     PreConditioningScenePhase,
     build_scene_assignment,
 )
+from .stimulus_controller import StimulusController
 
 DEFAULT_PHASE_ORDER: tuple[str, ...] = (
     "decoder_training",
@@ -55,9 +46,16 @@ PHASE_CLASS_BY_KEY = {
 PHASE_ALIASES = {
     "decoder_training": "decoder",
     "pre_conditioning_scene": "pre",
+    "pre-conditioning": "pre",
+    "pre conditioning": "pre",
     "fear_conditioning": "fear",
+    "fear conditioning": "fear",
     "post_conditioning_scene": "post",
+    "post-conditioning": "post",
+    "post conditioning": "post",
     "fmri_opto": "fmri",
+    "fMRI opto block design": "fmri",
+    "fmri opto block design": "fmri",
 }
 
 
@@ -104,6 +102,10 @@ class ExperimentScheduler:
                 self.logger.log_event("phase_skipped", phase=phase_name, reason="disabled")
                 continue
 
+            phase_cfg = dict(phase_cfg)
+            phase_cfg.setdefault("_randomization", dict(self.config.get("randomization", {})))
+            phase_cfg.setdefault("_stimuli", dict(self.config.get("stimuli", {})))
+
             phase_class = PHASE_CLASS_BY_KEY[phase_name]
             self.logger.log_event("phase_start", phase=phase_name, phase_class=phase_class.__name__)
             phase_class(context=context, config=phase_cfg).run()
@@ -117,10 +119,10 @@ class ExperimentScheduler:
         return dict(self.config.get("randomization", {})).get("seed")
 
     def _resolve_scene_assignment(self, seed: int | None) -> dict[str, Any]:
-        if self.session_assignment and {"target_scene", "distractor_scene"}.issubset(self.session_assignment):
+        if self.session_assignment and {"target", "distractor"}.issubset(self.session_assignment):
             return {
-                "target": self.session_assignment["target_scene"],
-                "distractor": self.session_assignment["distractor_scene"],
+                "target": self.session_assignment["target"],
+                "distractor": self.session_assignment["distractor"],
             }
         return build_scene_assignment(self.config, rng_seed=seed)
 

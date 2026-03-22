@@ -38,6 +38,9 @@ def validate_experiment_v2_config(config: dict[str, Any], source: str = "config"
     daq = config.get("daq", {})
     _require_mapping(daq, "daq", errors)
     _require_keys(daq, "daq", ["enabled"], errors)
+    opto_mode = str(daq.get("opto_mode", "dio")).lower()
+    if opto_mode not in {"dio", "counter"}:
+        errors.append("Invalid value for 'daq.opto_mode': expected 'dio' or 'counter'")
 
     channels = config.get("channels", {})
     _require_mapping(channels, "channels", errors)
@@ -58,6 +61,15 @@ def validate_experiment_v2_config(config: dict[str, Any], source: str = "config"
 
     randomization = config.get("randomization", {})
     _require_mapping(randomization, "randomization", errors)
+    dropout = randomization.get("dropout", {})
+    if dropout:
+        _require_mapping(dropout, "randomization.dropout", errors)
+        _require_keys(
+            dropout,
+            "randomization.dropout",
+            ["enabled", "interval_sec", "dropped_modalities", "dropout_duration_sec", "allow_multiple_simultaneous_drops"],
+            errors,
+        )
 
     logging_cfg = config.get("logging", {})
     _require_mapping(logging_cfg, "logging", errors)
@@ -66,6 +78,8 @@ def validate_experiment_v2_config(config: dict[str, Any], source: str = "config"
     session = config.get("session", {})
     _require_mapping(session, "session", errors)
     _require_keys(session, "session", ["name", "lick_input_name", "reward_output_name"], errors)
+
+    _validate_phase_blocks(phases, errors)
 
     if errors:
         message = f"Invalid experiment_v2 config ({source}):\n- " + "\n- ".join(errors)
@@ -83,3 +97,43 @@ def _require_keys(mapping: Any, path: str, keys: list[str], errors: list[str]) -
 def _require_mapping(value: Any, path: str, errors: list[str]) -> None:
     if not isinstance(value, dict):
         errors.append(f"Expected mapping at '{path}', got {type(value).__name__}")
+
+
+def _validate_phase_blocks(phases: dict[str, Any], errors: list[str]) -> None:
+    phase_key_map = {
+        "decoder": "decoder",
+        "pre-conditioning": "pre",
+        "fear conditioning": "fear",
+        "post-conditioning": "post",
+        "fMRI opto block design": "fmri",
+    }
+    normalized: dict[str, dict[str, Any]] = {}
+    for raw_key, raw_cfg in phases.items():
+        canonical = phase_key_map.get(raw_key, raw_key)
+        if isinstance(raw_cfg, dict):
+            normalized[canonical] = raw_cfg
+
+    decoder = normalized.get("decoder")
+    if decoder:
+        _require_keys(decoder, "phases.decoder", ["conditions", "reps_per_condition", "event_duration_sec", "iti_sec"], errors)
+
+    pre = normalized.get("pre")
+    if pre:
+        _require_keys(pre, "phases.pre-conditioning", ["blocks_per_condition", "block_table"], errors)
+
+    fear = normalized.get("fear")
+    if fear:
+        _require_keys(
+            fear,
+            "phases.fear conditioning",
+            ["shock_enabled", "target_scene_duration_min", "shocks_per_session", "shock_spacing_sec", "shock_channel"],
+            errors,
+        )
+
+    post = normalized.get("post")
+    if post:
+        _require_keys(post, "phases.post-conditioning", ["blocks_per_condition", "block_table"], errors)
+
+    fmri = normalized.get("fmri")
+    if fmri:
+        _require_keys(fmri, "phases.fMRI opto block design", ["total_duration_sec", "on_duration_sec", "off_duration_sec"], errors)

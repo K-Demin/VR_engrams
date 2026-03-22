@@ -4,8 +4,10 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from .audio_engine import AudioEngine
 from .daq_controller import DaqController
 from .logger import ExperimentLogger
+from .visual_engine import VisualEngine
 
 
 @dataclass
@@ -14,6 +16,8 @@ class StimulusController:
 
     daq: DaqController
     logger: ExperimentLogger
+    audio_engine: AudioEngine | None = None
+    visual_engine: VisualEngine | None = None
 
     def __post_init__(self) -> None:
         self.log_startup_self_check()
@@ -38,18 +42,26 @@ class StimulusController:
 
     def deliver_visual(self, channel: str, duration_sec: float) -> None:
         self.logger.log_event("stim_visual", channel=channel, duration_sec=duration_sec)
+        if self.visual_engine is not None:
+            presented = self.visual_engine.present(stimulus=channel, duration_sec=duration_sec)
+            self.logger.log_event("stim_visual_backend", channel=channel, duration_sec=duration_sec, backend="psychopy", presented=presented)
+            return
         path = self.daq.pulse_output(channel, duration_sec)
         self.logger.log_event("stim_visual_path", channel=channel, duration_sec=duration_sec, path=path)
 
     def deliver_sound(self, frequency_hz: float, duration_sec: float, side: str = "both") -> None:
-        # Placeholder for true audio backend integration.
+        used_backend = False
+        if self.audio_engine is not None:
+            used_backend = self.audio_engine.play_tone(frequency_hz=frequency_hz, duration_sec=duration_sec, side=side)
         self.logger.log_event(
             "stim_sound",
             frequency_hz=frequency_hz,
             duration_sec=duration_sec,
             side=side,
+            backend="sounddevice" if used_backend else "sleep_fallback",
         )
-        time.sleep(duration_sec)
+        if not used_backend:
+            time.sleep(duration_sec)
 
     def deliver_puff(self, channel: str, duration_sec: float) -> None:
         path = self.daq.trigger_puff(channel, duration_sec)
@@ -66,9 +78,9 @@ class StimulusController:
         )
 
     def deliver_opto(self, channel: str, duration_sec: float, power_mw: float | None = None) -> None:
-        # channel retained for compatibility with scheduler/config, but DAQ uses configured counter.
-        if not self.daq.opto_counter_channel:
-            raise ValueError("opto_counter_channel is required to deliver opto in opto phases")
+        # channel retained for scheduler/config compatibility; DAQ selects mode by `daq.opto_mode`.
+        if (self.daq.opto_mode or "dio").strip().lower() == "counter" and not self.daq.opto_counter_channel:
+            raise ValueError("opto_counter_channel is required when daq.opto_mode='counter'")
         path = self.daq.start_opto_train(duration_sec)
         self.logger.log_event(
             "stim_opto",

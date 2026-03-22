@@ -34,16 +34,16 @@ python main_pipeline.py configs/puff_task.yaml --animal m01
 
 Edit these first in `configs/experiment_v2.yaml`:
 
-1. **Phase repetitions (decoder):** `phases.decoder.trials`
-2. **Phase repetitions (pre-conditioning):** `phases.pre-conditioning.trials`
-3. **Phase repetitions (fear conditioning):** `phases.fear conditioning.trials`
-4. **Phase repetitions (post-conditioning):** `phases.post-conditioning.trials`
-5. **Phase repetitions (fMRI opto block):** `phases.fMRI opto block design.trials`
-6. **Timing / shock spacing via ITI:** `phases.fear conditioning.iti_sec`
+1. **Phase repetitions (decoder):** `phases.decoder.reps_per_condition`
+2. **Phase repetitions (pre-conditioning):** `phases.pre-conditioning.blocks_per_condition`
+3. **Shock count range (fear conditioning):** `phases.fear conditioning.shocks_per_session`
+4. **Post-conditioning repetitions:** `phases.post-conditioning.blocks_per_condition`
+5. **fMRI total duration:** `phases.fMRI opto block design.total_duration_sec`
+6. **Fear shock spacing:** `phases.fear conditioning.shock_spacing_sec`
 7. **Puff duration:** `stimuli.whisker.duration_sec`
 8. **Shock duration:** `stimuli.shock.duration_sec`
 9. **Reward valve pulse width (ms):** set reward pulse timing in the hardware/config path used for reward delivery (convert ms to seconds where applicable).
-10. **Opto train controls:** `phases.fMRI opto block design.opto_duration_sec` and hardware train settings in DAQ (counter frequency/pulse width) when applicable.
+10. **Opto train controls:** `stimuli.opto.frequency_hz`, `stimuli.opto.pulse_width_sec`, and `channels.counter_outputs.laser_clock`.
 
 ### Channel mapping fields to verify while editing
 
@@ -66,18 +66,45 @@ Before clicking run:
 
 - **Lick / valve subsystem**
   - Lick detection is read via NI digital input.
-  - Reward valve output is reserved in config for calibrated liquid delivery.
+  - Reward valve output is configured independently from whisker puff output.
+  - Reward calibration target is ~3–3.5 µL per lick; default pulse width is 50 ms and should be calibrated per rig.
 - **Puff subsystem**
   - Air puff TTL is sent through an NI digital output line.
   - Puff duration and side are controlled from config.
 - **Sound subsystem**
-  - Left/right tones are played through `sounddevice` according to trial rules.
+  - Tone A/B can be played through `sounddevice` backend (`stimuli.audio.enabled: true`).
+  - Fallback mode logs and sleeps when audio dependencies are unavailable.
 - **Visual subsystem**
-  - Visual trigger/display metadata is configured for scene A/B experiments.
+  - PsychoPy screen rendering is supported (`stimuli.visual.use_psychopy: true`).
+  - `stimuli.visual.screen_index` selects which monitor/screen receives VR scene rendering.
 - **Shock subsystem**
   - Shock channel exists in config and can be enabled/disabled per protocol.
 - **Optogenetics subsystem**
-  - Opto trigger channel and pulse metadata are included in config and default to disabled.
+  - Opto train supports two regimes via `daq.opto_mode`:
+    - `dio` (default): pulse train on digital output line (`stimuli.opto.output_name`)
+    - `counter`: NI counter-generated train (`channels.counter_outputs.laser_clock`)
+  - Default train is 20 Hz with 15 ms pulse width (configurable in `stimuli.opto`).
+  - Direct Arduino mode (no NI train generation) is available via tools:
+    - Arduino firmware: `tools/arduino_opto_firmware.ino`
+    - Python sender: `tools/arduino_opto_sender.py`
+    - Default serial port is `COM3` (override with `--port` if needed)
+    - Example command:
+      ```bash
+      python tools/arduino_opto_sender.py --port COM3 --mode block --freq-hz 20 --pulse-ms 15 --on-sec 30 --off-sec 30 --total-sec 3600
+      ```
+
+## v2 protocol mapping (implementation status)
+
+The v2 scheduler runs the following phases in order:
+
+1. `decoder` (isolated conditions: screen/sound/whisker/no-stim)
+2. `pre-conditioning` (scene blocks with modality dropout + sham opto condition)
+3. `fear conditioning` (continuous target scene + discrete NI-triggered shocks)
+4. `post-conditioning` (same scene blocks with active opto condition)
+5. `fMRI opto block design` (30 s on/off style hardware-timed opto blocks)
+
+Phase keys in YAML are normalized to canonical internal names (`decoder`, `pre`, `fear`, `post`, `fmri`) so both legacy and descriptive names are accepted.
+Dropout timing is driven by `randomization.dropout.*` (interval, modalities, duration range).
 
 ## NI channel mapping and calibration notes
 
@@ -95,6 +122,13 @@ Calibration note for liquid reward valve:
 - Start with **45–55 ms** open time and verify by gravimetric calibration.
 - Current default in config is **50 ms**, used for approximately **3–3.5 µL** delivery on the reference setup.
 
+For the v2 path, use these corresponding fields in `configs/experiment_v2.yaml`:
+
+- `session.reward_output_name` (logical NI output used for reward valve)
+- `stimuli.reward_valve.duration_sec` (valve opening duration)
+- `stimuli.opto.frequency_hz` and `stimuli.opto.pulse_width_sec` (hardware counter train defaults)
+- `channels.counter_outputs.laser_clock` (NI counter channel used for opto trains)
+
 ## Mouse-level randomization (target scene A/B assignment)
 
 `randomization_constraints.mouse_level_scene_assignment` sets the assignment policy:
@@ -106,17 +140,15 @@ Calibration note for liquid reward valve:
 
 This prevents within-session scene remapping while balancing assignment across mice.
 
-## Phase-by-phase protocol defaults
+## Phase-by-phase protocol defaults (v2 engram workflow)
 
 | Phase | Default duration / count | Purpose |
 |---|---:|---|
-| Baseline | 15 s, 1 repetition | Quiet pre-task imaging period |
-| Acquisition | 40 trials | Main task with audio cue, delay, puff, response window |
-| ITI (within acquisition) | 2.0–6.0 s | Variable inter-trial interval |
-| Cue delay (within acquisition) | 1.5 s | No-lick period after cue |
-| Response window (within acquisition) | 0.8 s | Lick detection window |
-| Timeout (early lick) | 5.0 s | Penalty period |
-| Extinction | disabled (0 trials) | Reserved optional phase |
+| Decoder | 60 reps/condition, 2–10 s event + 2–10 s ITI | Isolated modality representations |
+| Pre-conditioning | 4 blocks/condition | Baseline target/non-target/empty/opto-sham |
+| Fear conditioning | 6–8 min scene, 3–5 shocks | Target scene + aversive pairing |
+| Post-conditioning | 4 blocks/condition | Re-test + active opto condition |
+| fMRI opto | 30 s ON / 30 s OFF for 1 h | Block-design opto-only protocol |
 
 ## Expected output files
 

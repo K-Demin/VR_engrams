@@ -1,5 +1,6 @@
 daq:
   enabled: true
+  opto_mode: "dio"  # "dio" (default rig wiring) or "counter"
 
 channels:
   digital_outputs:
@@ -14,9 +15,18 @@ channels:
 
 stimuli:
   audio:
+    enabled: false
+    device: null
+    samplerate_hz: 48000
     cue_duration_sec: 0.5
-    default_frequency_hz: 8000
+    sound_a_frequency_hz: 8000
+    sound_b_frequency_hz: 12000
   visual:
+    use_psychopy: false
+    screen_index: 1
+    fullscreen: true
+    width: 1920
+    height: 1080
     trigger_output_name: "visual"
     duration_sec: 0.2
   whisker:
@@ -29,7 +39,12 @@ stimuli:
   opto:
     output_name: "opto"
     duration_sec: 1.0
+    frequency_hz: 20.0
+    pulse_width_sec: 0.015
     power_mw: 0.0
+  reward_valve:
+    output_name: "puff"
+    duration_sec: 0.05
 
 phases:
   decoder:
