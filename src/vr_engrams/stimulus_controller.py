@@ -42,12 +42,24 @@ class StimulusController:
 
     def deliver_visual(self, channel: str, duration_sec: float) -> None:
         self.logger.log_event("stim_visual", channel=channel, duration_sec=duration_sec)
-        if self.visual_engine is not None:
-            presented = self.visual_engine.present(stimulus=channel, duration_sec=duration_sec)
-            self.logger.log_event("stim_visual_backend", channel=channel, duration_sec=duration_sec, backend="psychopy", presented=presented)
-            return
-        path = self.daq.pulse_output(channel, duration_sec)
-        self.logger.log_event("stim_visual_path", channel=channel, duration_sec=duration_sec, path=path)
+        if self.visual_engine is None:
+            raise RuntimeError("VisualEngine is not configured; cannot render visual stimulus")
+
+        presented = self.visual_engine.present(stimulus=channel, duration_sec=duration_sec)
+        self.logger.log_event(
+            "stim_visual_backend",
+            channel=channel,
+            duration_sec=duration_sec,
+            backend="psychopy",
+            presented=presented,
+            enabled=self.visual_engine.enabled,
+            init_error=self.visual_engine.init_error,
+        )
+        if not presented:
+            raise RuntimeError(
+                "Visual stimulus was not presented. "
+                "Set stimuli.visual.use_psychopy=true and verify PsychoPy + display routing (screen_index)."
+            )
 
     def deliver_sound(self, frequency_hz: float, duration_sec: float, side: str = "both") -> None:
         used_backend = False

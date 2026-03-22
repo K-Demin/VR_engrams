@@ -98,7 +98,18 @@ def main() -> None:
         width=int(visual_cfg.get("width", 1920)),
         height=int(visual_cfg.get("height", 1080)),
     )
-    stimuli = StimulusController(daq=daq, logger=logger, audio_engine=audio_engine, visual_engine=visual_engine)
+    stimuli = StimulusController(
+        daq=daq,
+        logger=logger,
+        audio_engine=audio_engine,
+        visual_engine=visual_engine,
+    )
+    if not visual_engine.enabled:
+        raise RuntimeError(
+            "Visual backend is not ready for v2 runs. "
+            f"init_error={visual_engine.init_error}. "
+            "Set stimuli.visual.use_psychopy=true and verify PsychoPy installation and screen_index."
+        )
 
     def reward_callback() -> None:
         stimuli.trigger_reward_valve(
