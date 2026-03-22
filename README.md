@@ -34,16 +34,16 @@ python main_pipeline.py configs/puff_task.yaml --animal m01
 
 Edit these first in `configs/experiment_v2.yaml`:
 
-1. **Phase repetitions (decoder):** `phases.decoder.trials`
-2. **Phase repetitions (pre-conditioning):** `phases.pre-conditioning.trials`
-3. **Phase repetitions (fear conditioning):** `phases.fear conditioning.trials`
-4. **Phase repetitions (post-conditioning):** `phases.post-conditioning.trials`
-5. **Phase repetitions (fMRI opto block):** `phases.fMRI opto block design.trials`
-6. **Timing / shock spacing via ITI:** `phases.fear conditioning.iti_sec`
+1. **Phase repetitions (decoder):** `phases.decoder.reps_per_condition`
+2. **Phase repetitions (pre-conditioning):** `phases.pre-conditioning.blocks_per_condition`
+3. **Shock count range (fear conditioning):** `phases.fear conditioning.shocks_per_session`
+4. **Post-conditioning repetitions:** `phases.post-conditioning.blocks_per_condition`
+5. **fMRI total duration:** `phases.fMRI opto block design.total_duration_sec`
+6. **Fear shock spacing:** `phases.fear conditioning.shock_spacing_sec`
 7. **Puff duration:** `stimuli.whisker.duration_sec`
 8. **Shock duration:** `stimuli.shock.duration_sec`
 9. **Reward valve pulse width (ms):** set reward pulse timing in the hardware/config path used for reward delivery (convert ms to seconds where applicable).
-10. **Opto train controls:** `phases.fMRI opto block design.opto_duration_sec` and hardware train settings in DAQ (counter frequency/pulse width) when applicable.
+10. **Opto train controls:** `stimuli.opto.frequency_hz`, `stimuli.opto.pulse_width_sec`, and `channels.counter_outputs.laser_clock`.
 
 ### Channel mapping fields to verify while editing
 
@@ -66,7 +66,8 @@ Before clicking run:
 
 - **Lick / valve subsystem**
   - Lick detection is read via NI digital input.
-  - Reward valve output is reserved in config for calibrated liquid delivery.
+  - Reward valve output is configured independently from whisker puff output.
+  - Reward calibration target is ~3–3.5 µL per lick; default pulse width is 50 ms and should be calibrated per rig.
 - **Puff subsystem**
   - Air puff TTL is sent through an NI digital output line.
   - Puff duration and side are controlled from config.
@@ -77,7 +78,20 @@ Before clicking run:
 - **Shock subsystem**
   - Shock channel exists in config and can be enabled/disabled per protocol.
 - **Optogenetics subsystem**
-  - Opto trigger channel and pulse metadata are included in config and default to disabled.
+  - Opto train uses NI counter output for hardware timing (Python only starts/stops blocks).
+  - Default train is 20 Hz with 15 ms pulse width (configurable in `stimuli.opto`).
+
+## v2 protocol mapping (implementation status)
+
+The v2 scheduler runs the following phases in order:
+
+1. `decoder` (isolated conditions: screen/sound/whisker/no-stim)
+2. `pre-conditioning` (scene blocks with modality dropout + sham opto condition)
+3. `fear conditioning` (continuous target scene + discrete NI-triggered shocks)
+4. `post-conditioning` (same scene blocks with active opto condition)
+5. `fMRI opto block design` (30 s on/off style hardware-timed opto blocks)
+
+Phase keys in YAML are normalized to canonical internal names (`decoder`, `pre`, `fear`, `post`, `fmri`) so both legacy and descriptive names are accepted.
 
 ## NI channel mapping and calibration notes
 
@@ -94,6 +108,13 @@ Calibration note for liquid reward valve:
 
 - Start with **45–55 ms** open time and verify by gravimetric calibration.
 - Current default in config is **50 ms**, used for approximately **3–3.5 µL** delivery on the reference setup.
+
+For the v2 path, use these corresponding fields in `configs/experiment_v2.yaml`:
+
+- `session.reward_output_name` (logical NI output used for reward valve)
+- `stimuli.reward_valve.duration_sec` (valve opening duration)
+- `stimuli.opto.frequency_hz` and `stimuli.opto.pulse_width_sec` (hardware counter train defaults)
+- `channels.counter_outputs.laser_clock` (NI counter channel used for opto trains)
 
 ## Mouse-level randomization (target scene A/B assignment)
 
