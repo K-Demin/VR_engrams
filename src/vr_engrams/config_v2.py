@@ -38,6 +38,9 @@ def validate_experiment_v2_config(config: dict[str, Any], source: str = "config"
     daq = config.get("daq", {})
     _require_mapping(daq, "daq", errors)
     _require_keys(daq, "daq", ["enabled"], errors)
+    opto_mode = str(daq.get("opto_mode", "dio")).lower()
+    if opto_mode not in {"dio", "counter"}:
+        errors.append("Invalid value for 'daq.opto_mode': expected 'dio' or 'counter'")
 
     channels = config.get("channels", {})
     _require_mapping(channels, "channels", errors)

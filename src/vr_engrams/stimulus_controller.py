@@ -78,9 +78,9 @@ class StimulusController:
         )
 
     def deliver_opto(self, channel: str, duration_sec: float, power_mw: float | None = None) -> None:
-        # channel retained for compatibility with scheduler/config, but DAQ uses configured counter.
-        if not self.daq.opto_counter_channel:
-            raise ValueError("opto_counter_channel is required to deliver opto in opto phases")
+        # channel retained for scheduler/config compatibility; DAQ selects mode by `daq.opto_mode`.
+        if (self.daq.opto_mode or "dio").strip().lower() == "counter" and not self.daq.opto_counter_channel:
+            raise ValueError("opto_counter_channel is required when daq.opto_mode='counter'")
         path = self.daq.start_opto_train(duration_sec)
         self.logger.log_event(
             "stim_opto",

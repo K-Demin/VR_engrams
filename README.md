@@ -80,8 +80,18 @@ Before clicking run:
 - **Shock subsystem**
   - Shock channel exists in config and can be enabled/disabled per protocol.
 - **Optogenetics subsystem**
-  - Opto train uses NI counter output for hardware timing (Python only starts/stops blocks).
+  - Opto train supports two regimes via `daq.opto_mode`:
+    - `dio` (default): pulse train on digital output line (`stimuli.opto.output_name`)
+    - `counter`: NI counter-generated train (`channels.counter_outputs.laser_clock`)
   - Default train is 20 Hz with 15 ms pulse width (configurable in `stimuli.opto`).
+  - Direct Arduino mode (no NI train generation) is available via tools:
+    - Arduino firmware: `tools/arduino_opto_firmware.ino`
+    - Python sender: `tools/arduino_opto_sender.py`
+    - Default serial port is `COM3` (override with `--port` if needed)
+    - Example command:
+      ```bash
+      python tools/arduino_opto_sender.py --port COM3 --mode block --freq-hz 20 --pulse-ms 15 --on-sec 30 --off-sec 30 --total-sec 3600
+      ```
 
 ## v2 protocol mapping (implementation status)
 
