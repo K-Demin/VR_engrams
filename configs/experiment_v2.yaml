@@ -29,7 +29,12 @@ stimuli:
   opto:
     output_name: "opto"
     duration_sec: 1.0
+    frequency_hz: 20.0
+    pulse_width_sec: 0.015
     power_mw: 0.0
+  reward_valve:
+    output_name: "puff"
+    duration_sec: 0.05
 
 phases:
   decoder:

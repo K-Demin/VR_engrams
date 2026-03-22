@@ -56,7 +56,12 @@ def main() -> None:
     )
     logger.log_event("session_assignment", **session_assignment)
 
-    daq = DaqController(enabled=bool(config["daq"]["enabled"]))
+    daq = DaqController(
+        enabled=bool(config["daq"]["enabled"]),
+        opto_counter_channel=config.get("channels", {}).get("counter_outputs", {}).get("laser_clock"),
+        opto_freq_hz=float(config["stimuli"]["opto"].get("frequency_hz", 20.0)),
+        opto_pulse_width_s=float(config["stimuli"]["opto"].get("pulse_width_sec", 0.015)),
+    )
 
     for logical_name, channel in config["channels"]["digital_outputs"].items():
         daq.create_digital_output(logical_name, channel)
@@ -72,9 +77,9 @@ def main() -> None:
     stimuli = StimulusController(daq=daq, logger=logger)
 
     def reward_callback() -> None:
-        stimuli.deliver_puff(
+        stimuli.trigger_reward_valve(
             channel=config["session"]["reward_output_name"],
-            duration_sec=float(config["stimuli"]["whisker"].get("duration_sec", 0.05)),
+            duration_sec=float(config["stimuli"].get("reward_valve", {}).get("duration_sec", 0.05)),
         )
 
     lick_detector = LickDetector(
