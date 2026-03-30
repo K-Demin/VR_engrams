@@ -41,10 +41,14 @@ class DaqController:
         self._opto_do_stop_event = Event()
         self._opto_do_thread: Thread | None = None
 
-        if importlib.util.find_spec("nidaqmx") is None:
-            self.enabled = False
-            self._logger.warning("nidaqmx unavailable; DAQ disabled")
+        if not self.enabled:
+            self._logger.info("DAQ disabled by config")
             return
+
+        if importlib.util.find_spec("nidaqmx") is None:
+            raise RuntimeError(
+                "DAQ is enabled in config, but nidaqmx is not installed in this Python environment."
+            )
 
         self._nidaqmx = importlib.import_module("nidaqmx")
         constants = importlib.import_module("nidaqmx.constants")
@@ -99,36 +103,60 @@ class DaqController:
 
     def _pulse_do_channel(self, channel: str, duration_sec: float, event_name: str, named_task: Any | None = None) -> str:
         try:
-            self._pulse_on_demand(channel=channel, duration_sec=duration_sec, named_task=named_task)
-            self._logger.info("%s pulse path=on_demand channel=%s duration_sec=%s", event_name, channel, duration_sec)
-            return "on_demand"
+            self._pulse_hardware_timed(channel=channel, duration_sec=duration_sec)
+            self._logger.info("%s pulse path=hardware_timed channel=%s duration_sec=%s", event_name, channel, duration_sec)
+            return "hardware_timed"
         except Exception as exc:
-            if not self.allow_software_fallback:
-                self._logger.error(
-                    "%s pulse path=on_demand_failed fallback=disabled error=%s",
+            try:
+                self._pulse_on_demand(channel=channel, duration_sec=duration_sec, named_task=named_task)
+                self._logger.info(
+                    "%s pulse path=on_demand channel=%s duration_sec=%s (hardware_timed_failed=%s)",
                     event_name,
+                    channel,
+                    duration_sec,
                     exc,
                 )
-                raise RuntimeError(
-                    f"{event_name} pulse failed on on-demand path and allow_software_fallback=False"
-                ) from exc
+                return "on_demand"
+            except Exception as on_demand_exc:
+                if not self.allow_software_fallback:
+                    self._logger.error(
+                        "%s pulse paths=hardware_timed+on_demand_failed fallback=disabled errors=(%s, %s)",
+                        event_name,
+                        exc,
+                        on_demand_exc,
+                    )
+                    raise RuntimeError(
+                        f"{event_name} pulse failed on hardware-timed and on-demand paths with allow_software_fallback=False"
+                    ) from on_demand_exc
 
-            self._logger.warning(
-                "%s pulse path=fallback_software reason=on_demand_failure error=%s",
-                event_name,
-                exc,
-            )
-            if named_task is not None:
-                named_task.write(True)
-                time.sleep(duration_sec)
-                named_task.write(False)
-            else:
-                with self._nidaqmx.Task() as sw_task:
-                    sw_task.do_channels.add_do_chan(channel)
-                    sw_task.write(True)
+                self._logger.warning(
+                    "%s pulse paths=hardware_timed+on_demand_failed fallback=software error=%s",
+                    event_name,
+                    on_demand_exc,
+                )
+                if named_task is not None:
+                    named_task.write(True)
                     time.sleep(duration_sec)
-                    sw_task.write(False)
-            return "fallback_software"
+                    named_task.write(False)
+                else:
+                    with self._nidaqmx.Task() as sw_task:
+                        sw_task.do_channels.add_do_chan(channel)
+                        sw_task.write(True)
+                        time.sleep(duration_sec)
+                        sw_task.write(False)
+                return "fallback_software"
+
+    def _pulse_hardware_timed(self, channel: str, duration_sec: float) -> None:
+        with self._nidaqmx.Task() as hw_task:
+            hw_task.do_channels.add_do_chan(channel)
+            hw_task.timing.cfg_samp_clk_timing(
+                rate=self.do_sample_rate_hz,
+                sample_mode=self._acquisition_type.FINITE,
+                samps_per_chan=2,
+            )
+            hw_task.write([True, False], auto_start=False)
+            hw_task.start()
+            hw_task.wait_until_done(timeout=max(1.0, duration_sec + 0.5))
 
     def _pulse_on_demand(self, channel: str, duration_sec: float, named_task: Any | None = None) -> None:
         if named_task is not None:

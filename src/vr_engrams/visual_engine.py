@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import time
+from typing import Iterable
 
 
 @dataclass
@@ -10,6 +11,7 @@ class VisualEngine:
 
     enabled: bool = False
     screen_index: int = 1
+    screen_indices: list[int] | None = None
     fullscreen: bool = True
     width: int = 1920
     height: int = 1080
@@ -18,6 +20,7 @@ class VisualEngine:
         self._visual = None
         self._core = None
         self._window = None
+        self._windows: list[object] = []
         self.init_error: str | None = None
         if not self.enabled:
             self.init_error = "disabled_by_config"
@@ -31,52 +34,93 @@ class VisualEngine:
         self._visual = visual
         self._core = core
         try:
-            self._window = visual.Window(
-                size=[self.width, self.height],
-                fullscr=self.fullscreen,
-                units="pix",
-                screen=self.screen_index,
-                allowGUI=False,
-                color=[-1, -1, -1],
-            )
+            target_screens: Iterable[int] = self.screen_indices if self.screen_indices else [self.screen_index]
+            for idx in target_screens:
+                window = visual.Window(
+                    size=None if self.fullscreen else [self.width, self.height],
+                    fullscr=self.fullscreen,
+                    units="pix",
+                    screen=int(idx),
+                    monitor="testMonitor",
+                    allowGUI=False,
+                    color=[-1, -1, -1],
+                    checkTiming=False,
+                    waitBlanking=False,
+                )
+                self._windows.append(window)
+            self._window = self._windows[0]
+            self._show_black()
         except Exception as exc:
             self.enabled = False
             self.init_error = f"psychopy_window_failed: {exc}"
             return
 
     def present(self, stimulus: str, duration_sec: float) -> bool:
-        if not self.enabled or self._visual is None or self._window is None:
+        if not self.enabled or self._visual is None or not self._windows:
             return False
 
+        # Always enter visual presentation from a blank state.
+        self._show_black()
+
         if stimulus == "screen_a":
-            patch = self._visual.GratingStim(self._window, tex="sin", mask=None, sf=0.01, ori=0, contrast=0.5)
+            patches = [
+                self._visual.GratingStim(
+                    w,
+                    tex="sin",
+                    mask=None,
+                    sf=0.01,
+                    ori=0,
+                    contrast=0.5,
+                    size=w.size,
+                    units="pix",
+                )
+                for w in self._windows
+            ]
             t0 = time.perf_counter()
             while time.perf_counter() - t0 < duration_sec:
-                patch.phase += 0.03
-                patch.draw()
-                self._window.flip()
+                for patch in patches:
+                    patch.phase += 0.03
+                    patch.draw()
+                for window in self._windows:
+                    window.flip()
+            self._show_black()
             return True
 
         if stimulus == "screen_b":
-            dots = self._visual.DotStim(
-                self._window,
-                fieldSize=self._window.size[0],
-                nDots=200,
-                dotSize=5,
-                speed=2.0,
-                coherence=0.0,
-                fieldShape="rectangle",
-                units="pix",
-            )
+            dots_stimuli = [
+                self._visual.DotStim(
+                    window,
+                    fieldSize=window.size,
+                    nDots=200,
+                    dotSize=9,
+                    speed=2.0,
+                    coherence=0.0,
+                    fieldShape="rectangle",
+                    units="pix",
+                )
+                for window in self._windows
+            ]
             t0 = time.perf_counter()
             while time.perf_counter() - t0 < duration_sec:
-                dots.draw()
-                self._window.flip()
+                for dots in dots_stimuli:
+                    dots.draw()
+                for window in self._windows:
+                    window.flip()
+            self._show_black()
             return True
 
+        self._show_black()
         return False
 
+    def _show_black(self) -> None:
+        if not self._windows:
+            return
+        for window in self._windows:
+            window.color = [-1, -1, -1]
+            window.flip()
+
     def close(self) -> None:
-        if self._window is not None:
-            self._window.close()
-            self._window = None
+        for window in self._windows:
+            window.close()
+        self._windows = []
+        self._window = None
