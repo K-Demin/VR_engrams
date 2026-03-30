@@ -87,13 +87,16 @@ def main() -> None:
     audio_cfg = dict(config.get("stimuli", {}).get("audio", {}))
     visual_cfg = dict(config.get("stimuli", {}).get("visual", {}))
     audio_engine = AudioEngine(
-        enabled=bool(audio_cfg.get("enabled", False)),
+        enabled=bool(audio_cfg.get("enabled", True)),
         samplerate=int(audio_cfg.get("samplerate_hz", 48_000)),
         device=audio_cfg.get("device"),
     )
+    screen_indices = visual_cfg.get("screen_indices")
+    normalized_screen_indices = [int(idx) for idx in screen_indices] if isinstance(screen_indices, list) else None
     visual_engine = VisualEngine(
         enabled=bool(visual_cfg.get("use_psychopy", False)),
         screen_index=int(visual_cfg.get("screen_index", 1)),
+        screen_indices=normalized_screen_indices,
         fullscreen=bool(visual_cfg.get("fullscreen", True)),
         width=int(visual_cfg.get("width", 1920)),
         height=int(visual_cfg.get("height", 1080)),
