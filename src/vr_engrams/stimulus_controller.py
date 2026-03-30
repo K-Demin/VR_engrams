@@ -62,17 +62,18 @@ class StimulusController:
             )
 
     def deliver_sound(self, frequency_hz: float, duration_sec: float, side: str = "both") -> None:
-        used_backend = False
+        backend: str | None = None
         if self.audio_engine is not None:
-            used_backend = self.audio_engine.play_tone(frequency_hz=frequency_hz, duration_sec=duration_sec, side=side)
+            backend = self.audio_engine.play_tone(frequency_hz=frequency_hz, duration_sec=duration_sec, side=side)
         self.logger.log_event(
             "stim_sound",
             frequency_hz=frequency_hz,
             duration_sec=duration_sec,
             side=side,
-            backend="sounddevice" if used_backend else "sleep_fallback",
+            backend=backend or "sleep_fallback",
+            audio_init_error=(self.audio_engine.init_error if self.audio_engine is not None else "audio_engine_not_configured"),
         )
-        if not used_backend:
+        if backend is None:
             time.sleep(duration_sec)
 
     def deliver_puff(self, channel: str, duration_sec: float) -> None:
