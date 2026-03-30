@@ -36,20 +36,44 @@ class VisualEngine:
         try:
             target_screens: Iterable[int] = self.screen_indices if self.screen_indices else [self.screen_index]
             for idx in target_screens:
+                window_kwargs = {
+                    "fullscr": self.fullscreen,
+                    "units": "pix",
+                    "screen": int(idx),
+                    "allowGUI": False,
+                    "color": [-1, -1, -1],
+                    # Keep PsychoPy's normal timing path unless explicitly overridden by config defaults.
+                    "checkTiming": True,
+                }
+                if not self.fullscreen:
+                    window_kwargs["size"] = [self.width, self.height]
                 window = visual.Window(
-                    size=[self.width, self.height],
-                    fullscr=self.fullscreen,
-                    units="pix",
-                    screen=int(idx),
-                    allowGUI=False,
-                    color=[-1, -1, -1],
+                    **window_kwargs,
                 )
                 self._windows.append(window)
             self._window = self._windows[0]
+            for window in self._windows:
+                window.color = [-1, -1, -1]
+                win_handle = getattr(window, "winHandle", None)
+                if win_handle is not None:
+                    set_visible = getattr(win_handle, "set_visible", None)
+                    if callable(set_visible):
+                        set_visible(True)
+                    activate = getattr(win_handle, "activate", None)
+                    if callable(activate):
+                        activate()
+                window.flip()
         except Exception as exc:
             self.enabled = False
             self.init_error = f"psychopy_window_failed: {exc}"
             return
+
+    def show_black(self) -> None:
+        if not self.enabled or not self._windows:
+            return
+        for window in self._windows:
+            window.color = [-1, -1, -1]
+            window.flip()
 
     def present(self, stimulus: str, duration_sec: float) -> bool:
         if not self.enabled or self._visual is None or not self._windows:
@@ -57,25 +81,37 @@ class VisualEngine:
 
         if stimulus == "screen_a":
             patches = [
-                self._visual.GratingStim(w, tex="sin", mask=None, sf=0.01, ori=0, contrast=0.5)
+                self._visual.GratingStim(
+                    w,
+                    tex="sin",
+                    mask=None,
+                    sf=0.01,
+                    ori=0,
+                    contrast=0.5,
+                    size=w.size,
+                    units="pix",
+                )
                 for w in self._windows
             ]
             t0 = time.perf_counter()
-            while time.perf_counter() - t0 < duration_sec:
-                for patch in patches:
-                    patch.phase += 0.03
-                    patch.draw()
-                for window in self._windows:
-                    window.flip()
+            try:
+                while time.perf_counter() - t0 < duration_sec:
+                    for patch in patches:
+                        patch.phase += 0.03
+                        patch.draw()
+                    for window in self._windows:
+                        window.flip()
+            finally:
+                self.show_black()
             return True
 
         if stimulus == "screen_b":
             dots_stimuli = [
                 self._visual.DotStim(
                     window,
-                    fieldSize=window.size[0],
+                    fieldSize=window.size,
                     nDots=200,
-                    dotSize=5,
+                    dotSize=7,
                     speed=2.0,
                     coherence=0.0,
                     fieldShape="rectangle",
@@ -84,11 +120,14 @@ class VisualEngine:
                 for window in self._windows
             ]
             t0 = time.perf_counter()
-            while time.perf_counter() - t0 < duration_sec:
-                for dots in dots_stimuli:
-                    dots.draw()
-                for window in self._windows:
-                    window.flip()
+            try:
+                while time.perf_counter() - t0 < duration_sec:
+                    for dots in dots_stimuli:
+                        dots.draw()
+                    for window in self._windows:
+                        window.flip()
+            finally:
+                self.show_black()
             return True
 
         return False
