@@ -44,6 +44,8 @@ class VisualEngine:
                     "color": [-1, -1, -1],
                     # Avoid expensive / occasionally-stalling refresh-rate measurements during startup.
                     "checkTiming": False,
+                    # Prevent blocking indefinitely on buffer swap on some multi-monitor Windows setups.
+                    "waitBlanking": False,
                 }
                 if not self.fullscreen:
                     window_kwargs["size"] = [self.width, self.height]
@@ -52,7 +54,10 @@ class VisualEngine:
                 )
                 self._windows.append(window)
             self._window = self._windows[0]
-            self.show_black()
+            # Windows are already configured with a black background; avoid initial flip here because
+            # swapBuffers/dispatch_events can block on some systems before the run loop starts.
+            for window in self._windows:
+                window.color = [-1, -1, -1]
         except Exception as exc:
             self.enabled = False
             self.init_error = f"psychopy_window_failed: {exc}"
