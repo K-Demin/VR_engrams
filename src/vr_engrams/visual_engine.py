@@ -37,6 +37,19 @@ class VisualEngine:
             target_screens: Iterable[int] = self.screen_indices if self.screen_indices else [self.screen_index]
             for idx in target_screens:
                 window = visual.Window(
+                    size=None if self.fullscreen else [self.width, self.height],
+                    fullscr=self.fullscreen,
+                    units="pix",
+                    screen=int(idx),
+                    monitor="testMonitor",
+                    allowGUI=False,
+                    color=[-1, -1, -1],
+                    checkTiming=False,
+                    waitBlanking=False,
+                )
+                self._windows.append(window)
+            self._window = self._windows[0]
+            self._show_black()
                     size=[self.width, self.height],
                     fullscr=self.fullscreen,
                     units="pix",
@@ -55,8 +68,21 @@ class VisualEngine:
         if not self.enabled or self._visual is None or not self._windows:
             return False
 
+        # Always enter visual presentation from a blank state.
+        self._show_black()
+
         if stimulus == "screen_a":
             patches = [
+                self._visual.GratingStim(
+                    w,
+                    tex="sin",
+                    mask=None,
+                    sf=0.01,
+                    ori=0,
+                    contrast=0.5,
+                    size=w.size,
+                    units="pix",
+                )
                 self._visual.GratingStim(w, tex="sin", mask=None, sf=0.01, ori=0, contrast=0.5)
                 for w in self._windows
             ]
@@ -67,12 +93,16 @@ class VisualEngine:
                     patch.draw()
                 for window in self._windows:
                     window.flip()
+            self._show_black()
             return True
 
         if stimulus == "screen_b":
             dots_stimuli = [
                 self._visual.DotStim(
                     window,
+                    fieldSize=window.size,
+                    nDots=200,
+                    dotSize=9,
                     fieldSize=window.size[0],
                     nDots=200,
                     dotSize=5,
@@ -89,9 +119,18 @@ class VisualEngine:
                     dots.draw()
                 for window in self._windows:
                     window.flip()
+            self._show_black()
             return True
 
+        self._show_black()
         return False
+
+    def _show_black(self) -> None:
+        if not self._windows:
+            return
+        for window in self._windows:
+            window.color = [-1, -1, -1]
+            window.flip()
 
     def close(self) -> None:
         for window in self._windows:
