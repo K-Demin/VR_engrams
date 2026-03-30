@@ -15,7 +15,7 @@ channels:
 
 stimuli:
   audio:
-    enabled: false
+    enabled: true
     device: null
     samplerate_hz: 48000
     cue_duration_sec: 0.5
@@ -24,6 +24,8 @@ stimuli:
   visual:
     use_psychopy: true
     screen_index: 1
+    # Mirror the same VR stimulus on the three VR displays.
+    screen_indices: [1, 2, 3]
     fullscreen: true
     width: 1920
     height: 1080
