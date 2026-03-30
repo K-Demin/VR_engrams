@@ -50,6 +50,15 @@ class VisualEngine:
                 self._windows.append(window)
             self._window = self._windows[0]
             self._show_black()
+                    size=[self.width, self.height],
+                    fullscr=self.fullscreen,
+                    units="pix",
+                    screen=int(idx),
+                    allowGUI=False,
+                    color=[-1, -1, -1],
+                )
+                self._windows.append(window)
+            self._window = self._windows[0]
         except Exception as exc:
             self.enabled = False
             self.init_error = f"psychopy_window_failed: {exc}"
@@ -74,6 +83,7 @@ class VisualEngine:
                     size=w.size,
                     units="pix",
                 )
+                self._visual.GratingStim(w, tex="sin", mask=None, sf=0.01, ori=0, contrast=0.5)
                 for w in self._windows
             ]
             t0 = time.perf_counter()
@@ -93,6 +103,9 @@ class VisualEngine:
                     fieldSize=window.size,
                     nDots=200,
                     dotSize=9,
+                    fieldSize=window.size[0],
+                    nDots=200,
+                    dotSize=5,
                     speed=2.0,
                     coherence=0.0,
                     fieldShape="rectangle",
