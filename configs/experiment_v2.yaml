@@ -7,8 +7,11 @@ channels:
     puff: "Dev1/port0/line5"
     shock: "Dev1/port0/line7"
     opto: "Dev1/port1/line0"
-  digital_inputs:
-    lick: "Dev1/port0/line1"
+  digital_inputs: {}
+  analog_outputs:
+    reward_valve: "Dev1/ao1"
+  analog_inputs:
+    lick: "Dev1/ai2"
   counter_outputs:
     # Optional section for future pulse-train outputs.
     laser_clock: "Dev1/ctr0"
@@ -44,8 +47,8 @@ stimuli:
     pulse_width_sec: 0.015
     power_mw: 0.0
   reward_valve:
-    output_name: "puff"
-    duration_sec: 0.05
+    output_name: "reward_valve"
+    duration_ms: 50
 
 phases:
   decoder:
@@ -124,6 +127,9 @@ logging:
 session:
   name: "vr_engrams_v2"
   lick_input_name: "lick"
-  reward_output_name: "puff"
+  reward_output_name: "reward_valve"
   reward_on_lick: false
   lick_poll_interval_sec: 0.005
+  lick_threshold: 2.5
+  lick_logic_mode: "high_is_lick"
+  lick_refractory_sec: 0.05

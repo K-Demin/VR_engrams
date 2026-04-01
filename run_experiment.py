@@ -15,6 +15,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from assignment import assign_target_scene
+from system_control import resolve_lick_ports
 from vr_engrams.daq_controller import DaqController
 from vr_engrams.lick_detector import LickDetector
 from vr_engrams.logger import ExperimentLogger
@@ -79,11 +80,20 @@ def main() -> None:
         daq.create_digital_output(logical_name, channel)
     for logical_name, channel in channels.get("digital_inputs", {}).items():
         daq.create_digital_input(logical_name, channel)
+    for logical_name, channel in channels.get("analog_outputs", {}).items():
+        daq.create_analog_output(logical_name, channel)
+    for logical_name, channel in channels.get("analog_inputs", {}).items():
+        daq.create_analog_input(logical_name, channel)
 
     stimuli = StimulusController(daq=daq, logger=logger)
 
-    reward_channel = config.get("reward", {}).get("channel", "reward")
-    reward_duration = float(config.get("reward", {}).get("duration_sec", 0.05))
+    lick_ports = resolve_lick_ports(config)
+    reward_channel = lick_ports.reward_output_name
+    reward_cfg = config.get("stimuli", {}).get("reward_valve", {})
+    if "duration_ms" in reward_cfg:
+        reward_duration = max(0.1, float(reward_cfg["duration_ms"])) / 1000.0
+    else:
+        reward_duration = float(reward_cfg.get("duration_sec", 0.05))
 
     def reward_callback() -> None:
         stimuli.trigger_reward_valve(reward_channel, reward_duration)
@@ -91,9 +101,12 @@ def main() -> None:
     lick_detector = LickDetector(
         daq=daq,
         logger=logger,
-        lick_input_name=config.get("lick", {}).get("input_name", "lick"),
+        lick_input_name=lick_ports.lick_input_name,
         reward_callback=reward_callback,
-        poll_interval_sec=float(config.get("lick", {}).get("poll_interval_sec", 0.005)),
+        poll_interval_sec=float(config.get("session", {}).get("lick_poll_interval_sec", 0.005)),
+        threshold=float(config.get("session", {}).get("lick_threshold", 2.5)),
+        logic_mode=str(config.get("session", {}).get("lick_logic_mode", "high_is_lick")),
+        refractory_sec=float(config.get("session", {}).get("lick_refractory_sec", 0.05)),
     )
 
     scheduler = ExperimentScheduler(
@@ -104,7 +117,7 @@ def main() -> None:
         session_assignment=session_assignment,
     )
 
-    reward_on_lick = bool(config.get("lick", {}).get("reward_on_lick", False))
+    reward_on_lick = bool(config.get("session", {}).get("reward_on_lick", False))
 
     try:
         logger.log_event("session_assignment", **session_assignment)

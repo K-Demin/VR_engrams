@@ -30,6 +30,8 @@ class DaqController:
 
     do_tasks: dict[str, Any] = field(default_factory=dict)
     di_tasks: dict[str, Any] = field(default_factory=dict)
+    ao_tasks: dict[str, Any] = field(default_factory=dict)
+    ai_tasks: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self._nidaqmx = None
@@ -69,6 +71,21 @@ class DaqController:
         task.di_channels.add_di_chan(channel)
         self.di_tasks[name] = task
 
+    def create_analog_output(self, name: str, channel: str) -> None:
+        if not self.enabled:
+            return
+        task = self._nidaqmx.Task(new_task_name=f"ao_{name}")
+        task.ao_channels.add_ao_voltage_chan(channel)
+        task.write(0.0)
+        self.ao_tasks[name] = task
+
+    def create_analog_input(self, name: str, channel: str) -> None:
+        if not self.enabled:
+            return
+        task = self._nidaqmx.Task(new_task_name=f"ai_{name}")
+        task.ai_channels.add_ai_voltage_chan(channel)
+        self.ai_tasks[name] = task
+
     def pulse_output(self, name: str, duration_sec: float) -> str:
         """Backward-compatible pulse API now routed to hardware-first helper."""
         return self._pulse_named_output(name=name, duration_sec=duration_sec, event_name="generic")
@@ -99,7 +116,25 @@ class DaqController:
                 channel = name
             return self._pulse_do_channel(channel=channel, duration_sec=duration_sec, event_name=event_name, named_task=task)
 
+        if name in self.ao_tasks:
+            task = self.ao_tasks[name]
+            return self._pulse_ao_channel(duration_sec=duration_sec, event_name=event_name, named_task=task)
+
         return self._pulse_do_channel(channel=name, duration_sec=duration_sec, event_name=event_name)
+
+    def _pulse_ao_channel(self, duration_sec: float, event_name: str, named_task: Any) -> str:
+        try:
+            named_task.write(5.0)
+            time.sleep(duration_sec)
+            named_task.write(0.0)
+            self._logger.info("%s pulse path=analog_on_demand duration_sec=%s", event_name, duration_sec)
+            return "analog_on_demand"
+        except Exception as exc:
+            if not self.allow_software_fallback:
+                raise RuntimeError(f"{event_name} pulse failed on analog output") from exc
+            time.sleep(duration_sec)
+            self._logger.warning("%s pulse path=fallback_disabled_no_hardware (analog failed=%s)", event_name, exc)
+            return "fallback_disabled_no_hardware"
 
     def _pulse_do_channel(self, channel: str, duration_sec: float, event_name: str, named_task: Any | None = None) -> str:
         try:
@@ -276,14 +311,18 @@ class DaqController:
         if self.enabled:
             self.do_tasks[name].write(state)
 
-    def read_input(self, name: str) -> bool:
+    def read_input(self, name: str) -> float | bool:
         if not self.enabled:
             return False
+        if name in self.ai_tasks:
+            return float(self.ai_tasks[name].read())
         return bool(self.di_tasks[name].read())
 
     def close(self) -> None:
         self.stop_opto_train()
-        for task in list(self.do_tasks.values()) + list(self.di_tasks.values()):
+        for task in list(self.do_tasks.values()) + list(self.di_tasks.values()) + list(self.ao_tasks.values()) + list(self.ai_tasks.values()):
             task.close()
         self.do_tasks.clear()
         self.di_tasks.clear()
+        self.ao_tasks.clear()
+        self.ai_tasks.clear()
