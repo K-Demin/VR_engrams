@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from assignment import assign_target_scene
+from system_control import resolve_lick_ports
 
 from .config_v2 import load_experiment_v2_config
 from .audio_engine import AudioEngine
@@ -77,6 +78,10 @@ def main() -> None:
         daq.create_digital_output(logical_name, channel)
     for logical_name, channel in config["channels"]["digital_inputs"].items():
         daq.create_digital_input(logical_name, channel)
+    for logical_name, channel in config["channels"].get("analog_outputs", {}).items():
+        daq.create_analog_output(logical_name, channel)
+    for logical_name, channel in config["channels"].get("analog_inputs", {}).items():
+        daq.create_analog_input(logical_name, channel)
 
     if config["channels"].get("counter_outputs"):
         logger.log_event(
@@ -114,18 +119,28 @@ def main() -> None:
             "Set stimuli.visual.use_psychopy=true and verify PsychoPy installation and screen_index."
         )
 
+    lick_ports = resolve_lick_ports(config)
+    reward_cfg = config.get("stimuli", {}).get("reward_valve", {})
+    if "duration_ms" in reward_cfg:
+        reward_duration_sec = max(0.1, float(reward_cfg["duration_ms"])) / 1000.0
+    else:
+        reward_duration_sec = float(reward_cfg.get("duration_sec", 0.05))
+
     def reward_callback() -> None:
         stimuli.trigger_reward_valve(
-            channel=config["session"]["reward_output_name"],
-            duration_sec=float(config["stimuli"].get("reward_valve", {}).get("duration_sec", 0.05)),
+            channel=lick_ports.reward_output_name,
+            duration_sec=reward_duration_sec,
         )
 
     lick_detector = LickDetector(
         daq=daq,
         logger=logger,
-        lick_input_name=config["session"]["lick_input_name"],
+        lick_input_name=lick_ports.lick_input_name,
         reward_callback=reward_callback,
         poll_interval_sec=float(config["session"].get("lick_poll_interval_sec", 0.005)),
+        threshold=float(config["session"].get("lick_threshold", 2.5)),
+        logic_mode=str(config["session"].get("lick_logic_mode", "high_is_lick")),
+        refractory_sec=float(config["session"].get("lick_refractory_sec", 0.05)),
     )
 
     scheduler = ExperimentScheduler(
