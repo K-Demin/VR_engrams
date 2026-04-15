@@ -15,7 +15,7 @@ class DaqController:
 
     Pulse policy:
     - shock/puff/reward valve pulses use OnDemand digital writes (Python-timed pulse width).
-    - opto train uses NI counter output (20 Hz, 15 ms defaults).
+    - opto train uses Arduino serial TRAIN commands in production.
     - software fallback exists only if `allow_software_fallback` is True.
     """
 
@@ -23,10 +23,13 @@ class DaqController:
     do_sample_rate_hz: float = 10_000.0
     allow_software_fallback: bool = False
     opto_counter_channel: str | None = None
-    opto_mode: str = "dio"
+    opto_mode: str = "arduino"
     opto_do_name: str = "opto"
     opto_freq_hz: float = 20.0
     opto_pulse_width_s: float = 0.015
+    opto_arduino_port: str = "COM3"
+    opto_arduino_baud: int = 115200
+    opto_arduino_timeout_s: float = 1.0
 
     do_tasks: dict[str, Any] = field(default_factory=dict)
     di_tasks: dict[str, Any] = field(default_factory=dict)
@@ -42,6 +45,8 @@ class DaqController:
         self._opto_task: Any | None = None
         self._opto_do_stop_event = Event()
         self._opto_do_thread: Thread | None = None
+        self._serial = None
+        self._opto_serial_port: Any | None = None
 
         if not self.enabled:
             self._logger.info("DAQ disabled by config")
@@ -213,12 +218,74 @@ class DaqController:
             return "fallback_disabled_no_hardware"
 
         self.stop_opto_train()
-        mode = (self.opto_mode or "dio").strip().lower()
+        mode = (self.opto_mode or "arduino").strip().lower()
+        if mode == "arduino":
+            return self._start_opto_arduino_train(duration_sec=duration_sec)
         if mode == "counter":
             if not self.opto_counter_channel:
                 raise ValueError("opto_counter_channel must be configured for counter-based opto train")
             return self._start_opto_counter_train(duration_sec=duration_sec)
         return self._start_opto_dio_train(duration_sec=duration_sec)
+
+    def _get_serial_module(self) -> Any:
+        if self._serial is not None:
+            return self._serial
+        if importlib.util.find_spec("serial") is None:
+            raise RuntimeError(
+                "opto_mode='arduino' requires pyserial. Install with: pip install pyserial"
+            )
+        self._serial = importlib.import_module("serial")
+        return self._serial
+
+    def _ensure_opto_serial_connected(self) -> Any:
+        if self._opto_serial_port is not None and bool(getattr(self._opto_serial_port, "is_open", False)):
+            return self._opto_serial_port
+
+        serial = self._get_serial_module()
+        self._opto_serial_port = serial.Serial(
+            self.opto_arduino_port,
+            int(self.opto_arduino_baud),
+            timeout=float(self.opto_arduino_timeout_s),
+        )
+        # Let Arduino reset after serial open.
+        time.sleep(2.0)
+        self._opto_serial_port.reset_input_buffer()
+        self._logger.info(
+            "opto_train path=arduino_connected port=%s baud=%s",
+            self.opto_arduino_port,
+            self.opto_arduino_baud,
+        )
+        return self._opto_serial_port
+
+    def _start_opto_arduino_train(self, duration_sec: float | None) -> str:
+        if duration_sec is None:
+            raise ValueError("Arduino opto mode requires a finite duration_sec")
+        ser = self._ensure_opto_serial_connected()
+
+        pulse_ms = float(self.opto_pulse_width_s) * 1000.0
+        duration_ms = int(round(float(duration_sec) * 1000.0))
+        command = f"TRAIN {float(self.opto_freq_hz):.6f} {pulse_ms:.6f} {duration_ms}\n"
+        ser.write(command.encode("ascii"))
+        ser.flush()
+
+        deadline = time.time() + max(2.0, float(duration_sec) + 2.0)
+        while time.time() < deadline:
+            line = ser.readline().decode("utf-8", errors="replace").strip()
+            if line:
+                self._logger.info("opto_train arduino_response=%s", line)
+            if line.startswith("OK TRAIN"):
+                self._logger.info(
+                    "opto_train path=arduino_serial port=%s freq_hz=%s pulse_width_s=%s duration_sec=%s",
+                    self.opto_arduino_port,
+                    self.opto_freq_hz,
+                    self.opto_pulse_width_s,
+                    duration_sec,
+                )
+                return "arduino_serial"
+            if line.startswith("ERR"):
+                raise RuntimeError(f"Arduino rejected TRAIN command: {line}")
+
+        raise TimeoutError("Timed out waiting for 'OK TRAIN' from Arduino")
 
     def _start_opto_counter_train(self, duration_sec: float | None) -> str:
         self.stop_opto_train()
@@ -306,6 +373,14 @@ class DaqController:
             self._opto_task.close()
             self._opto_task = None
             self._logger.info("opto_train stopped")
+
+        if self._opto_serial_port is not None:
+            try:
+                if bool(getattr(self._opto_serial_port, "is_open", False)):
+                    self._opto_serial_port.close()
+            except Exception:
+                pass
+            self._opto_serial_port = None
 
     def write_output(self, name: str, state: bool) -> None:
         if self.enabled:

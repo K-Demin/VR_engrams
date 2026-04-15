@@ -67,11 +67,14 @@ def main() -> None:
 
     daq = DaqController(
         enabled=bool(config["daq"]["enabled"]),
-        opto_mode=str(config.get("daq", {}).get("opto_mode", "dio")),
+        opto_mode=str(config.get("daq", {}).get("opto_mode", "arduino")),
         opto_do_name=str(config["stimuli"]["opto"].get("output_name", "opto")),
         opto_counter_channel=config.get("channels", {}).get("counter_outputs", {}).get("laser_clock"),
         opto_freq_hz=float(config["stimuli"]["opto"].get("frequency_hz", 20.0)),
         opto_pulse_width_s=float(config["stimuli"]["opto"].get("pulse_width_sec", 0.015)),
+        opto_arduino_port=str(config["stimuli"]["opto"].get("arduino_port", "COM3")),
+        opto_arduino_baud=int(config["stimuli"]["opto"].get("arduino_baud", 115200)),
+        opto_arduino_timeout_s=float(config["stimuli"]["opto"].get("arduino_timeout_sec", 1.0)),
     )
 
     for logical_name, channel in config["channels"]["digital_outputs"].items():

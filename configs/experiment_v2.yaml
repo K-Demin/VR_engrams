@@ -1,6 +1,6 @@
 daq:
   enabled: true
-  opto_mode: "dio"  # "dio" (default rig wiring) or "counter"
+  opto_mode: "arduino"
 
 channels:
   digital_outputs:
@@ -45,6 +45,9 @@ stimuli:
     duration_sec: 1.0
     frequency_hz: 20.0
     pulse_width_sec: 0.015
+    arduino_port: "COM3"
+    arduino_baud: 115200
+    arduino_timeout_sec: 1.0
     power_mw: 0.0
   reward_valve:
     output_name: "reward_valve"
