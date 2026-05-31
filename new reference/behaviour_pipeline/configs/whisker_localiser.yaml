@@ -1,0 +1,105 @@
+# configs/whisker_localiser.yaml
+#
+# Whisker localiser — block-design air puff task for widefield signal testing.
+# Run with:
+#   python whisker_localiser_pipeline.py configs/whisker_localiser.yaml \
+#          --animal m01 --session 1 --run 1
+#
+# Session structure
+# -----------------
+#   BASELINE → [REST → PUFF_BLOCK] × n_blocks → TAIL_REST → DONE
+#
+#   Total session length is fixed at timing.total_duration_s, measured from
+#   imaging_start_time (the moment Master-9 fires on PC1). This makes every
+#   run the same length regardless of how random rest durations fall.
+#
+#   BASELINE   : Pre-task imaging. Duration: timing.baseline_s.
+#
+#   REST        : Inter-block rest (no puffs). Duration drawn per rest_mode:
+#                 "fixed"  → always rest_duration_s
+#                 "random" → uniform draw between rest_min_s and rest_max_s,
+#                            capped so the remaining blocks always fit within
+#                            total_duration_s.
+#
+#   PUFF_BLOCK  : Repeated puffs for block_duration_s. Puff onset-to-onset
+#                 interval is puff_interval_s. Block ends when block_duration_s
+#                 elapses; the current puff always completes before stopping.
+#
+#   TAIL_REST   : Remaining time after the last block until total_duration_s.
+#                 Duration = total_duration_s - elapsed_at_last_block_end.
+#                 This is never drawn randomly — it fills exactly whatever
+#                 time is left, so total session length is always consistent.
+#
+# Validation (checked at startup before any hardware is touched)
+# --------------------------------------------------------------
+#   1. puff_interval_s > puff_duration_s
+#   2. block_duration_s >= puff_interval_s  (at least one puff per block)
+#   3. total_duration_s >= baseline_s
+#                          + n_blocks × (min_rest_s + block_duration_s)
+#                          + min_rest_s  (minimum tail rest)
+#      using rest_duration_s as min_rest_s when rest_mode = "fixed"
+
+# ------------------------------------------------------------------
+# BIDS metadata
+# ------------------------------------------------------------------
+task_label: "whisker"       # used in filename: task-whisker
+
+base_path_pc2: "Y:/"
+base_path_pc1: "C:/Users/User/Documents/Data/Josh_test/BehaviourData"
+
+# ------------------------------------------------------------------
+# Session parameters
+# ------------------------------------------------------------------
+session:
+  n_blocks: 10              # number of puff blocks
+
+# ------------------------------------------------------------------
+# Timing
+# ------------------------------------------------------------------
+timing:
+  total_duration_s: 360.0   # total session length in seconds (6 min)
+                            # tail rest fills whatever time remains after
+                            # the last block, so every run is exactly this long
+
+  baseline_s: 30.0          # seconds of imaging before any puffs begin
+
+  # --- Puff block ---
+  block_duration_s: 5.0    # seconds of continuous puffing per block
+  puff_duration_s: 0.05     # single puff valve-open time in seconds (50 ms)
+  puff_interval_s: 0.2      # time between puff ONSETS in seconds
+                            # must be > puff_duration_s
+                            # e.g. 2.0s interval, 0.05s puff → ~5% duty cycle
+
+  # --- Rest between blocks ---
+  rest_mode: "random"       # "fixed"  → always rest_duration_s
+                            # "random" → uniform draw, capped to fit total_duration_s
+  rest_duration_s: 30.0     # used when rest_mode = "fixed"
+  rest_min_s: 20.0          # used when rest_mode = "random" (lower bound)
+  rest_max_s: 40.0          # used when rest_mode = "random" (upper bound before cap)
+
+# ------------------------------------------------------------------
+# Imaging
+# ------------------------------------------------------------------
+imaging:
+  led_cycle: ["Green", "Blue"]   # must match Master-9 paradigm order
+                                         # ["Green", "Blue"] for 2-channel
+                                         # ["Green"] for single channel
+  frame_rate: 20                    # Hz — must match Master-9 CH3 paradigm
+
+# ------------------------------------------------------------------
+# Hardware
+# ------------------------------------------------------------------
+hardware:
+  puff_channel: "Dev1/port0/line5"      # NI-DAQ DO line for air puff valve
+  ir_led_channel: "Dev1/port0/line1"   # NI-DAQ DO line for IR LED sync pulses
+
+# ------------------------------------------------------------------
+# IR LED sync pulse settings
+# ------------------------------------------------------------------
+ir_led:
+  pulse_duration: 0.5       # seconds per pulse — 0.5s = 15 frames at 30 Hz
+                            # Four pulses fired automatically:
+                            #   ir_sync_task_start    — PC2 pipeline active
+                            #   ir_sync_imaging_start — FSM loop about to begin
+                            #   ir_sync_imaging_stop  — total_duration_s elapsed
+                            #   ir_sync_task_end      — session fully complete

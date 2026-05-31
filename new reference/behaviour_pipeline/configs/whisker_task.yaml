@@ -1,0 +1,26 @@
+session:
+  duration_minutes: 4          # total scan duration
+  frame_rate: 30               # Hz — must match Master-9 CH3 paradigm
+  # 4 min x 30 Hz = 7,200 total frames
+  # GRB cycle = 3 frames -> 2,400 frames per channel
+
+base_path_pc2: "Y:/"
+base_path_pc1: "C:/Users/User/Documents/Data/Josh_test/BehaviourData"
+
+stimulation:
+  n_blocks: 4                  # one block per minute
+  block_duration: 10.0         # seconds — duration of each puff block
+  puff_rate_hz: 5.0            # puffs per second within a block (configurable)
+  # puff_rate_hz: 2.0          # uncomment for 2 Hz, etc.
+
+  # Block start time is randomised within each minute with these constraints:
+  #   earliest_start: 10s into the minute  (guarantees 10s baseline)
+  #   latest_start:   50s into the minute  (guarantees block fits before next minute)
+  block_start_min: 10.0        # earliest offset within each minute (seconds)
+  block_start_max: 50.0        # latest offset within each minute (seconds)
+
+hardware:
+  puff_channel: "Dev1/port0/line5"   # NI-DAQ digital output channel
+
+timing:
+  puff_duration: 0.05          # single puff ON time in seconds (50 ms)

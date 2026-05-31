@@ -1,0 +1,11 @@
+# Hardware
+airpuff_line: "Dev1/port0/line5"
+
+# Timing
+n_trials: 100
+puff_ms: 50
+iti_min: 5
+iti_max: 15
+
+# Data
+base_path: "Y:/"

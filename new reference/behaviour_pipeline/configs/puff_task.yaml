@@ -1,0 +1,62 @@
+# configs/puff_task.yaml
+#
+# Air-puff conditioning task for widefield calcium imaging rig.
+# Run with: python puff_pipeline.py configs/puff_task.yaml --animal m01 --session 1 --run 1
+
+# ------------------------------------------------------------------
+# BIDS metadata
+# ------------------------------------------------------------------
+task_label: "puff"
+
+base_path_pc2: "Y:/"
+base_path_pc1: "C:/Users/User/Documents/Data/Josh_test/BehaviourData"
+
+# ------------------------------------------------------------------
+# Session parameters
+# ------------------------------------------------------------------
+session:
+  n_trials: 40
+  easy_trials: 15           # first N trials: audio cue on puff side only (congruent)
+
+# ------------------------------------------------------------------
+# Timing
+# ------------------------------------------------------------------
+timing:
+  baseline: 15              # seconds of imaging before task events begin
+  iti_min: 2.0
+  iti_max: 6.0
+  audio_duration: 0.5
+  delay: 1.5                # delay from audio offset → puff
+  puff_duration: 0.05       # 50 ms
+  response_window: 0.8
+  timeout: 5.0
+
+# ------------------------------------------------------------------
+# Imaging
+# ------------------------------------------------------------------
+imaging:
+  led_cycle: ["Green", "Blue"]   # CH6=Green (10Hz), CH7=Blue (10Hz)
+                                  # CH5 (Red) is OFF in current paradigm
+  frame_rate: 20.0               # Hz — CH3: D=40ms, I=50ms → 20Hz
+
+# ------------------------------------------------------------------
+# Hardware
+# ------------------------------------------------------------------
+hardware:
+  puff_channel: "Dev1/port0/line5"
+  lick_channel: "Dev1/ai2"
+  puff_side: "right"
+  ir_led_channel: "Dev1/port0/line1"
+
+# ------------------------------------------------------------------
+# IR LED sync pulse settings
+# ------------------------------------------------------------------
+ir_led:
+  pulse_duration: 0.5       # seconds — 0.5s = 10 frames at 20Hz
+
+# ------------------------------------------------------------------
+# Audio
+# ------------------------------------------------------------------
+audio:
+  left_freq: 8000           # Hz
+  right_freq: 16000         # Hz

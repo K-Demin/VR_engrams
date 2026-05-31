@@ -1,0 +1,166 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  bonsai_elp_workflow.bonsai
+  
+  ELP body camera workflow for Bonsai v2.9
+  
+  What this workflow does:
+    1. Opens ELP USB camera (DirectShow, MJPEG, 1280x720 @ 30fps)
+    2. Converts each frame to grayscale
+    3. Writes grayscale frames to AVI (XVID compressed)
+    4. Shows a live preview window (scaled down for PC1 monitor)
+  
+  Properties overridden at launch by elp_camera.py:
+    VideoCapture.Index                       → USB device index
+    VideoCapture.CaptureProperties[FrameWidth]  → 1280
+    VideoCapture.CaptureProperties[FrameHeight] → 720
+    VideoCapture.CaptureProperties[Fps]         → 30
+    FileCapture.FileName                     → full output path
+  
+  HOW TO SET UP IN BONSAI (first time only):
+  ------------------------------------------
+  1. Open Bonsai v2.9
+  2. File > Open > select this file
+  3. Click the VideoCapture node — in Properties panel on the right:
+       - Set Index to your ELP camera device number
+         (start with 0; if wrong camera opens, try 1, 2 etc.)
+       - Under CaptureProperties, confirm FrameWidth=1280, FrameHeight=720, Fps=30
+       - Set Codec to MJPG (essential for USB2 at this resolution)
+  4. Click the FileCapture (VideoWriter) node:
+       - Set FileName to any test path to confirm it works
+       - Suffix: None (Python provides the full timestamped path)
+       - Overwrite: True
+  5. Click Start (▶) to test — you should see the preview window and AVI being written
+  6. Click Stop — check the AVI plays back correctly in VLC
+  7. Save the workflow — it is now ready for subprocess control
+  
+  NODE DESCRIPTIONS:
+  ------------------
+  VideoCapture      → DirectShow USB camera source (ELP)
+  Grayscale         → Converts BGR frame to single-channel grayscale
+  FileCapture       → Writes grayscale frames to AVI (XVID)
+  Visualizer        → Preview window (only shown when workflow is running)
+  
+  IMPORTANT — MANUAL PROPERTY NODES:
+  If the --property command-line flags don't work in your Bonsai version,
+  set these values manually in the Bonsai GUI and save the workflow.
+  The subprocess will still control start/stop, but properties are baked in.
+-->
+<WorkflowBuilder Version="2.9.0"
+                 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                 xmlns="https://bonsai-rx.org/2018/workflow"
+                 xmlns:cv="clr-namespace:Bonsai.Vision;assembly=Bonsai.Vision"
+                 xmlns:rx="clr-namespace:Bonsai.Reactive;assembly=Bonsai.Core">
+  <Workflow>
+    <Nodes>
+
+      <!-- ============================================================
+           NODE 1: VideoCapture — ELP USB camera source
+           Properties set here are overridden by --property flags at launch.
+           ============================================================ -->
+      <Expression xsi:type="Source">
+        <Generator xsi:type="cv:VideoCapture">
+          <!-- USB device index: 0 = first camera. Override with
+               - -property:VideoCapture.Index=N at launch -->
+          <cv:Index>0</cv:Index>
+
+          <!-- CaptureProperties control resolution, FPS, codec.
+               MJPG codec is REQUIRED for 1280x720 @ 30fps over USB2.
+               Without it the camera falls back to uncompressed YUY2
+               which maxes out at ~10fps at this resolution. -->
+          <cv:CaptureProperties>
+            <cv:CaptureProperty>
+              <cv:Property>FrameWidth</cv:Property>
+              <cv:Value>1280</cv:Value>
+            </cv:CaptureProperty>
+            <cv:CaptureProperty>
+              <cv:Property>FrameHeight</cv:Property>
+              <cv:Value>720</cv:Value>
+            </cv:CaptureProperty>
+            <cv:CaptureProperty>
+              <cv:Property>Fps</cv:Property>
+              <cv:Value>30</cv:Value>
+            </cv:CaptureProperty>
+            <cv:CaptureProperty>
+              <!-- FourCC code for MJPEG: 1196444237 = MJPG as int32
+                   If this doesn't work, set it manually in the Bonsai GUI
+                   using the dropdown in CaptureProperties. -->
+              <cv:Property>FourCC</cv:Property>
+              <cv:Value>1196444237</cv:Value>
+            </cv:CaptureProperty>
+            <!-- Auto-exposure OFF: locks exposure so luminance is stable.
+                 Critical for pupil tracking — auto-exposure will confound
+                 luminance measurements used as an arousal index.
+                 Value -7 = manual mode on most UVC cameras.
+                 If pupil tracking is your priority, set this in the Bonsai
+                 GUI after confirming the camera accepts it. -->
+            <cv:CaptureProperty>
+              <cv:Property>AutoExposure</cv:Property>
+              <cv:Value>-7</cv:Value>
+            </cv:CaptureProperty>
+          </cv:CaptureProperties>
+        </Generator>
+      </Expression>
+
+      <!-- ============================================================
+           NODE 2: Grayscale — convert BGR to single-channel grayscale
+           Grayscale halves file size vs colour and is all DLC/LP needs.
+           ============================================================ -->
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="cv:Grayscale" />
+      </Expression>
+
+      <!-- ============================================================
+           NODE 3: FileCapture (VideoWriter) — write to AVI
+           FileName is overridden at launch by:
+             --property:FileCapture.FileName=C:\...\body_camera.avi
+           ============================================================ -->
+      <Expression xsi:type="Combinator">
+        <Combinator xsi:type="cv:VideoWriter">
+          <!-- Placeholder path — always overridden by subprocess at launch -->
+          <cv:FileName>C:\body_camera_placeholder.avi</cv:FileName>
+          <!-- FourCC XVID: compressed AVI — good quality, manageable file size,
+               compatible with DLC, LightningPose, OpenCV, VLC.
+               ~1-2 GB/hour at 1280x720 grayscale 30fps. -->
+          <cv:FourCC>XVID</cv:FourCC>
+          <cv:FrameRate>30</cv:FrameRate>
+          <!-- FrameSize must match capture resolution -->
+          <cv:FrameSize>
+            <cv:Width>1280</cv:Width>
+            <cv:Height>720</cv:Height>
+          </cv:FrameSize>
+          <!-- Grayscale = false colour channels, but we write 1-channel frames.
+               Bonsai VideoWriter handles grayscale IplImage correctly. -->
+        </Combinator>
+      </Expression>
+
+      <!-- ============================================================
+           NODE 4: Visualizer — live preview window on PC1
+           Only shown when workflow is running (not in --no-editor mode
+           if Bonsai suppresses it — if preview doesn't appear, remove
+           --no-editor from the launch command in elp_camera.py to run
+           with the Bonsai editor/visualizer open instead).
+           ============================================================ -->
+      <Expression xsi:type="Sink">
+        <Operator xsi:type="rx:Visualizer">
+          <rx:DesignSize>
+            <rx:Width>640</rx:Width>
+            <rx:Height>360</rx:Height>
+          </rx:DesignSize>
+        </Operator>
+      </Expression>
+
+    </Nodes>
+
+    <!-- ============================================================
+         EDGES: connect nodes in sequence
+         VideoCapture -> Grayscale -> FileCapture -> Visualizer
+         ============================================================ -->
+    <Edges>
+      <Edge From="0" To="1" Label="Source1" />
+      <Edge From="1" To="2" Label="Source1" />
+      <Edge From="1" To="3" Label="Source1" />
+    </Edges>
+
+  </Workflow>
+</WorkflowBuilder>

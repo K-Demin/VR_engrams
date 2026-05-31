@@ -1,0 +1,27 @@
+# configs/lick_training.yaml
+#
+# Lick training task configuration
+# Run with: python main_lick_training.py configs/lick_training.yaml --animal m01 --level 1
+
+session:
+  level: 1            # 1 = free reward | 2 = lick-triggered | 3 = probabilistic
+  n_rewards: 50       # stop after this many water deliveries, at 29 ms ~430 rewards for 1.5 mL
+
+base_path_pc2: "Y:/"
+base_path_pc1: "C:/Users/User/Documents/Data/Josh_test/BehaviourData"
+
+timing:
+  free_reward_interval: 5.0   # Level 1: seconds between automatic rewards
+  reward_delay: 0.5            # Level 2 & 3: seconds from lick → valve open
+  reward_probability: 0.75     # Level 3: fraction of licks that trigger reward (0.0–1.0)
+  refractory: 3              # seconds after reward/withhold before next lick counts
+                               # prevents double-counting from a single lick burst
+
+hardware:
+  #lick_channel: "Dev1/port0/line1"   # digital: DI channel
+  lick_channel: "Dev1/ai2"         # analog:  AI channel (uncomment if analog sensor)
+  lick_mode: "analog"               # "digital" or "analog"
+  lick_threshold: 1.0                # analog mode only — voltage below = lick
+  valve_channel: "Dev1/ao1"          # analog output — 0V closed, 5V open
+  valve_duration_ms: 29              # milliseconds valve stays open (~4 µL at typical pressure)
+                                     # calibrate: run water_valve.py directly, weigh output

@@ -1,0 +1,55 @@
+# configs/rest_task.yaml
+#
+# Resting-state imaging configuration.
+# Run with: python main_rest_task.py configs/rest_task.yaml --animal m01 --session 1 --run 1
+
+# ------------------------------------------------------------------
+# BIDS metadata
+# ------------------------------------------------------------------
+task_label: "rest"
+
+base_path_pc2: "Y:/"
+base_path_pc1: "C:/Users/User/Documents/Data/Josh_test/BehaviourData"
+
+# ------------------------------------------------------------------
+# Session parameters
+# ------------------------------------------------------------------
+session:
+  duration_minutes: 6
+  frame_rate: 20            # Hz — must match Master-9 CH3 paradigm (I=50ms → 20Hz)
+  # 4 min x 20 Hz = 4,800 total frames
+  # Green/Blue cycle = 2 frames → 2,400 frames per channel
+
+# ------------------------------------------------------------------
+# Timing
+# ------------------------------------------------------------------
+timing:
+  baseline: 0               # imaging starts immediately on START
+
+# ------------------------------------------------------------------
+# Imaging
+# ------------------------------------------------------------------
+imaging:
+  led_cycle: ["Green", "Blue"]   # CH6=Green (10Hz), CH7=Blue (10Hz)
+                                  # CH5 (Red) is OFF in current paradigm
+  frame_rate: 20.0               # Hz — CH3: D=40ms, I=50ms → 20Hz
+
+# ------------------------------------------------------------------
+# Hardware
+# ------------------------------------------------------------------
+hardware:
+  ir_led_channel: "Dev1/port0/line1"
+
+# ------------------------------------------------------------------
+# IR LED sync pulse settings
+# ------------------------------------------------------------------
+ir_led:
+  pulse_duration: 0.5       # seconds — 0.5s = 10 frames at 20Hz
+
+# ------------------------------------------------------------------
+# Bonsai (body camera on PC1)
+# ------------------------------------------------------------------
+bonsai:
+  exe_path: "C:/Users/Users/AppData/Local/Bonsai/Bonsai.exe"
+  workflow_path: "C:/Users/User/Documents/Library/behaviour_pipeline/utils/bonsai_elp_workflow.bonsai"
+  headless: true

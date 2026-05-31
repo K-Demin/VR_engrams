@@ -1,0 +1,34 @@
+# configs/audio_lick_reward.yaml
+#
+# Audio → Lick → Reward association task
+# Run with: python main_audio_lick_reward.py configs/audio_lick_reward.yaml --animal m01 --level 1
+
+session:
+  level: 1            # 1 = pavlovian | 2 = operant | 3 = probabilistic operant
+  n_trials: 25        # number of tone presentations
+
+base_path_pc2: "Y:/"
+base_path_pc1: "C:/Users/User/Documents/Data/Josh_test/BehaviourData"
+
+timing:
+  tone_interval: 15.0       # Level 1 & 2: fixed ITI in seconds (tone-to-tone)
+  iti_min: 10.0             # Level 3: minimum ITI in seconds (variable)
+  iti_max: 30.0             # Level 3: maximum ITI in seconds (variable)
+  tone_duration: 1.0        # seconds the tone plays
+  tone_reward_delay: 0.5    # Level 1: seconds from tone offset → valve opens
+  response_window: 3.0      # Level 2 & 3: seconds after tone offset to detect lick
+  reward_probability: 0.75  # Level 3: fraction of lick-responses that trigger reward
+  refractory: 1.5           # seconds after miss/withhold before next trial starts
+
+hardware:
+  #lick_channel: "Dev1/port0/line1"
+  lick_channel: "Dev1/ai2"
+  lick_mode: "analog"               # "digital" or "analog"
+  lick_threshold: 1.0                # analog mode only
+  valve_channel: "Dev1/ao1"          # analog output — 0V closed, 5V open
+  valve_duration_ms: 29              # milliseconds (calibrate: run water_valve.py, weigh output)
+
+audio:
+  tone_freq: 15000      # Hz — 8 kHz is well within mouse hearing range
+  tone_side: "both"    # "left", "right", or "both"
+  volume: 0.2         # amplitude 0.0–1.0
