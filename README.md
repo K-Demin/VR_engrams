@@ -8,7 +8,7 @@ This repository currently supports two execution paths:
 ## Canonical run command (v2 production)
 
 ```bash
-python run_experiment_v2.py configs/experiment_v2.yaml --animal-id M001
+python run_experiment_v2.py configs/experiment_v2.yaml --animal-id M001 --session 1 --run 1
 ```
 
 ## Legacy pipeline status (legacy)
@@ -26,9 +26,22 @@ python main_pipeline.py configs/puff_task.yaml --animal m01
 2. Open and edit `configs/experiment_v2.yaml` for the current session.
 3. Run the canonical command:
    ```bash
-   python run_experiment_v2.py configs/experiment_v2.yaml --animal-id M001
+   python run_experiment_v2.py configs/experiment_v2.yaml --animal-id M001 --session 1 --run 1
    ```
-4. Confirm session output appears under `logging.output_root` (default `./data`).
+4. Confirm session output appears under `logging.output_root` (default `./data`). Imaging-linked runs use BIDS-style `sub-<animal>/ses-<n>/func/` output.
+
+## Task selection in v2
+
+The v2 entrypoint is the same for the full protocol, decoder-only, fear/pre/post-only, fMRI-only, and bench/no-imaging runs. Task selection is config-driven: the scheduler runs phases whose YAML blocks are enabled and skips phases with `enabled: false`.
+
+```bash
+python run_experiment_v2.py configs/experiment_v2.yaml --animal-id M001 --session 1 --run 1
+python run_experiment_v2.py configs/decoder_only.yaml --animal-id M001 --session 1 --run 1
+python run_experiment_v2.py configs/fmri_opto.yaml --animal-id M001 --session 1 --run 1
+python run_experiment_v2.py configs/experiment_v2.yaml --animal-id M001 --no-camera-sync
+```
+
+No task state machines from `new reference` are imported into the VR Engrams scheduler; that folder is used only as a device-interface reference.
 
 ## What to edit before each run (top 10 parameters)
 
@@ -47,10 +60,11 @@ Edit these first in `configs/experiment_v2.yaml`:
 
 ### Channel mapping fields to verify while editing
 
-- `channels.digital_inputs.lick`
+- `channels.analog_inputs.lick`
 - `channels.digital_outputs.puff`
 - `channels.digital_outputs.shock`
 - `channels.digital_outputs.opto`
+- `channels.digital_outputs.ir_led`
 - `channels.counter_outputs.laser_clock`
 
 ## Preflight checklist
@@ -65,9 +79,13 @@ Before clicking run:
 ## Hardware overview
 
 - **Lick / valve subsystem**
-  - Lick detection is read via NI digital input.
-  - Reward valve output is configured independently from whisker puff output.
-  - Reward calibration target is ~3–3.5 µL per lick; default pulse width is 50 ms and should be calibrated per rig.
+  - Lick detection defaults to NI analog input `Dev1/ai2` with `session.lick_logic_mode: low_is_lick`.
+  - Reward valve output is configured independently from whisker puff output and uses the v2 analog-output pulse path by default.
+  - Reward calibration target is ~3-3.5 uL per lick; default pulse width is 50 ms and should be calibrated per rig.
+- **Camera / imaging sync subsystem**
+  - When `imaging.enabled: true`, PC2 sends `PING`, `TIMESYNC`, `START <pc1_func_dir>|<bids_stem>|<led_cycle>`, and `STOP` to the PC1 camera listener.
+  - PC1 Master-9 fire time is used as session `t=0` for event onsets.
+  - Optional IR LED pulses are emitted through `channels.digital_outputs.ir_led` at run start, imaging-start marker, imaging-stop marker, and run end.
 - **Puff subsystem**
   - Air puff TTL is sent through an NI digital output line.
   - Puff duration and side are controlled from config.
@@ -124,7 +142,7 @@ Calibration note for liquid reward valve:
 For the v2 path, use these corresponding fields in `configs/experiment_v2.yaml`:
 
 - `session.reward_output_name` (logical NI output used for reward valve)
-- `stimuli.reward_valve.duration_sec` (valve opening duration)
+- `stimuli.reward_valve.duration_ms` (valve opening duration in milliseconds)
 - `stimuli.opto.frequency_hz` and `stimuli.opto.pulse_width_sec` (hardware counter train defaults)
 - `channels.counter_outputs.laser_clock` (NI counter channel used for opto trains)
 
@@ -151,16 +169,18 @@ This prevents within-session scene remapping while balancing assignment across m
 
 ## Expected output files
 
-Each run creates a session folder at:
+Imaging-linked runs create BIDS-style session folders:
 
-- PC2: `<base_path_pc2>/<animal>/<YYYY-MM-DD>/puff_task_<HH-MM-SS>/`
-- PC1: `<base_path_pc1>/<animal>/<YYYY-MM-DD>/puff_task_<HH-MM-SS>/`
+- PC2: `<bids_root_pc2>/sub-<animal>/ses-<n>/func/`
+- PC1: `<bids_root_pc1>/sub-<animal>/ses-<n>/func/`
 
 Expected files include:
 
-- `behaviour_log.csv` (behavioural events)
-- `frame_log.csv` (camera/frame timing; produced by camera computer)
-- `config_used.yaml` (**immutable effective config snapshot**)
-- `config_used.sha256` (digest for provenance/verification)
+- `events.jsonl` and `events.csv` (existing v2 compatibility logs)
+- `behavior_log.csv` (lick monitor and behavioural events)
+- `sub-<animal>_ses-<n>_task-<task>_run-<run>_events.tsv` (BIDS-style events for imaging alignment)
+- `sub-<animal>_ses-<n>_task-<task>_run-<run>_config.yaml` (effective config snapshot)
+- `sub-<animal>_ses-<n>_task-<task>_run-<run>_clock_sync.yaml` (PC1/PC2 clock offset and imaging start metadata)
+- `*_frames.tsv` (camera/frame timing; produced by the PC1 camera computer)
 
-`config_used.yaml` is the effective runtime config (including runtime overrides like animal ID), written once at session start and made read-only when filesystem permissions allow.
+The legacy root `main_pipeline.py` remains historical/maintenance-only. New production work should stay on `run_experiment_v2.py` and `src/vr_engrams`.

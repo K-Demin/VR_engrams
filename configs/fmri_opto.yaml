@@ -14,21 +14,19 @@ channels:
   analog_inputs:
     lick: "Dev1/ai2"
   counter_outputs:
-    # Optional section for future pulse-train outputs.
     laser_clock: "Dev1/ctr0"
 
 stimuli:
   audio:
-    enabled: true
+    enabled: false
     device: null
     samplerate_hz: 48000
     cue_duration_sec: 0.5
     sound_a_frequency_hz: 8000
     sound_b_frequency_hz: 12000
   visual:
-    use_psychopy: true
+    use_psychopy: false
     screen_index: 1
-    # Mirror the same VR stimulus on the three VR displays.
     screen_indices: [1, 2, 3]
     fullscreen: true
     width: 1920
@@ -68,58 +66,8 @@ imaging:
   ir_led_pulse_duration_sec: 0.5
 
 phases:
-  decoder:
-    enabled: false
-    conditions:
-      - "screen_a"
-      - "screen_b"
-      - "sound_a"
-      - "sound_b"
-      - "whisker_a"
-      - "whisker_b"
-      - "no_stim"
-    reps_per_condition: 60
-    event_duration_sec: [2.0, 10.0]
-    iti_sec: [2.0, 10.0]
-    randomize_trial_order: true
-    anti_streak_randomization: true
-    trial_table:
-      - cue_frequency_hz: 8000
-        cue_duration_sec: 0.5
-  pre-conditioning:
-    enabled: false
-    blocks_per_condition: 4
-    randomize_trial_order: true
-    block_table:
-      - condition: "target"
-        duration_sec: 30.0
-      - condition: "non_target"
-        duration_sec: 60.0
-      - condition: "empty"
-        duration_sec: 45.0
-      - condition: "opto_sham"
-        duration_sec: 60.0
-  fear conditioning:
-    enabled: false
-    randomize_trial_order: false
-    target_scene_duration_min: [6.0, 8.0]
-    shocks_per_session: [3, 5]
-    shock_spacing_sec: [30.0, 60.0]
-    shock_enabled: true
-    shock_channel: "shock"
-  post-conditioning:
-    blocks_per_condition: 4
-    randomize_trial_order: true
-    block_table:
-      - condition: "target"
-        duration_sec: 60.0
-      - condition: "non_target"
-        duration_sec: 60.0
-      - condition: "empty"
-        duration_sec: 45.0
-      - condition: "active_opto"
-        duration_sec: 60.0
   fMRI opto block design:
+    enabled: true
     total_duration_sec: 3600
     on_duration_sec: 30.0
     off_duration_sec: 30.0
@@ -132,12 +80,9 @@ randomization:
   seed: null
   strategy: "deterministic_hash"
   dropout:
-    enabled: true
+    enabled: false
     interval_sec: 10.0
-    dropped_modalities:
-      - "screen"
-      - "sound"
-      - "whisker"
+    dropped_modalities: ["screen", "sound", "whisker"]
     dropout_duration_sec: [2.0, 4.0]
     allow_multiple_simultaneous_drops: false
 
@@ -147,13 +92,14 @@ logging:
   bids_root_pc1: "C:/Users/User/Documents/Data/Josh_test/BehaviourData"
 
 session:
-  name: "vr_engrams_v2"
-  task_label: "vrengrams"
+  name: "vr_engrams_fmri_opto"
+  task_label: "fmriopto"
   session_num: 1
   run_num: 1
   lick_input_name: "lick"
   reward_output_name: "reward_valve"
   reward_on_lick: false
+  monitor_licks: false
   lick_poll_interval_sec: 0.005
   lick_threshold: 1.0
   lick_logic_mode: "low_is_lick"
