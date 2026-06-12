@@ -43,6 +43,33 @@ python run_experiment_v2.py configs/experiment_v2.yaml --animal-id M001 --no-cam
 
 No task state machines from `new reference` are imported into the VR Engrams scheduler; that folder is used only as a device-interface reference.
 
+## Direct stimulus tests
+
+Use `tools/test_stimuli.py` to test one stimulus without running the scheduler:
+
+```bash
+python tools/test_stimuli.py configs/experiment_v2.yaml list
+python tools/test_stimuli.py configs/experiment_v2.yaml visual --channel screen_a --duration-sec 2
+python tools/test_stimuli.py configs/experiment_v2.yaml sound --frequency-hz 8000 --duration-sec 0.5
+python tools/test_stimuli.py configs/experiment_v2.yaml puff --duration-sec 0.05
+python tools/test_stimuli.py configs/experiment_v2.yaml puff-a --duration-sec 0.05 --train-duration-sec 5 --frequency-hz 1
+python tools/test_stimuli.py configs/experiment_v2.yaml puff-b --duration-sec 0.05 --train-duration-sec 5 --frequency-hz 1
+python tools/test_stimuli.py configs/experiment_v2.yaml reward --duration-ms 50
+python tools/test_stimuli.py configs/experiment_v2.yaml ir-led --duration-sec 0.5
+python tools/test_stimuli.py configs/experiment_v2.yaml opto --duration-sec 1 --frequency-hz 20 --pulse-width-ms 15 --armed
+python tools/test_stimuli.py configs/experiment_v2.yaml shock --duration-sec 0.2 --armed
+```
+
+`puff-a` and `puff-b` run as pulse trains during whisker stimuli. Configure their train rates separately with `stimuli.whisker.puff_a_frequency_hz` and `stimuli.whisker.puff_b_frequency_hz` (default `1.0` Hz). `puff-b` uses the same main puff valve as `puff-a`, but first sets the side-selector solenoid high on `channels.digital_outputs.puff_b_selector` at `Dev1/port0/line7`. After the B train, the selector resets low to the A side. Add `--no-daq` to dry-run hardware outputs without touching NI/serial devices. `--armed` is only an explicit safety confirmation for opto and shock test commands.
+
+For Puff B debugging, sweep selector timing and polarity without editing YAML:
+
+```bash
+python tools/test_stimuli.py configs/experiment_v2.yaml puff-selector --state high --hold-sec 2
+python tools/test_stimuli.py configs/experiment_v2.yaml puff-b --duration-sec 0.05 --train-duration-sec 5 --frequency-hz 1 --selector-settle-sec 0.2
+python tools/test_stimuli.py configs/experiment_v2.yaml puff-b --duration-sec 0.05 --train-duration-sec 5 --frequency-hz 1 --selector-state low
+```
+
 ## What to edit before each run (top 10 parameters)
 
 Edit these first in `configs/experiment_v2.yaml`:
@@ -56,16 +83,16 @@ Edit these first in `configs/experiment_v2.yaml`:
 7. **Puff duration:** `stimuli.whisker.duration_sec`
 8. **Shock duration:** `stimuli.shock.duration_sec`
 9. **Reward valve pulse width (ms):** set reward pulse timing in the hardware/config path used for reward delivery (convert ms to seconds where applicable).
-10. **Opto train controls:** `stimuli.opto.frequency_hz`, `stimuli.opto.pulse_width_sec`, and `channels.counter_outputs.laser_clock`.
+10. **Opto train controls:** `stimuli.opto.frequency_hz`, `stimuli.opto.pulse_width_sec`, `stimuli.opto.arduino_port`, and `stimuli.opto.arduino_pin`.
 
 ### Channel mapping fields to verify while editing
 
 - `channels.analog_inputs.lick`
 - `channels.digital_outputs.puff`
+- `channels.digital_outputs.puff_b_selector`
 - `channels.digital_outputs.shock`
-- `channels.digital_outputs.opto`
 - `channels.digital_outputs.ir_led`
-- `channels.counter_outputs.laser_clock`
+- `stimuli.opto.arduino_port` and `stimuli.opto.arduino_pin`
 
 ## Preflight checklist
 
@@ -99,16 +126,23 @@ Before clicking run:
   - Shock channel exists in config and can be enabled/disabled per protocol.
 - **Optogenetics subsystem**
   - Production path uses Arduino serial train generation via `daq.opto_mode: arduino`.
-  - Runtime sends `TRAIN <freq_hz> <pulse_ms> <duration_ms>` to Arduino firmware.
+  - The Arduino firmware drives opto TTL on digital pin 9 by default (`stimuli.opto.arduino_pin: 9` documents this mapping).
+  - The current rig is configured as active-high (`stimuli.opto.arduino_active_low: false`): D9 LOW is laser off, D9 HIGH is laser on.
+  - Runtime sends `PING`, `POLARITY ACTIVE_HIGH`, `OFF`, then `TRAIN <freq_hz> <pulse_ms> <duration_ms>` to Arduino firmware.
+  - Serial opens with Arduino auto-reset disabled by default (`stimuli.opto.arduino_reset_on_connect: false`) to avoid a brief laser-on window before the first command.
   - Serial settings live in `stimuli.opto.arduino_port`, `stimuli.opto.arduino_baud`, `stimuli.opto.arduino_timeout_sec`.
   - Pulse shape is still set by `stimuli.opto.frequency_hz` and `stimuli.opto.pulse_width_sec`.
   - Supporting tools:
-    - Arduino firmware: `tools/arduino_opto_firmware.ino`
+    - Arduino firmware: `tools/arduino_opto_firmware/arduino_opto_firmware.ino`
     - Python sender: `tools/arduino_opto_sender.py`
     - Example command:
       ```bash
-      python tools/arduino_opto_sender.py --port COM3 --mode block --freq-hz 20 --pulse-ms 15 --on-sec 30 --off-sec 30 --total-sec 3600
+      python tools/arduino_opto_sender.py --port COM3 --pin 9 --mode ping
+      python tools/arduino_opto_sender.py --port COM3 --pin 9 --mode off
+      python tools/arduino_opto_sender.py --port COM3 --pin 9 --mode block --freq-hz 20 --pulse-ms 15 --on-sec 30 --off-sec 30 --total-sec 3600
       ```
+  - If the laser stays on after a test, turn the laser key/interlock off first. Then upload `tools/arduino_opto_firmware/arduino_opto_firmware.ino`; the current firmware boots D9 LOW so the laser is off before any serial command.
+  - If a brief flash still happens exactly when a serial program opens the port, that is during Arduino reset/high-impedance time and cannot be fully solved in Python. Add a physical TTL pull-down from D9 to GND or disable auto-reset on the Arduino for hard safety.
 
 ## v2 protocol mapping (implementation status)
 
@@ -118,7 +152,7 @@ The v2 scheduler runs the following phases in order:
 2. `pre-conditioning` (scene blocks with modality dropout + sham opto condition)
 3. `fear conditioning` (continuous target scene + discrete NI-triggered shocks)
 4. `post-conditioning` (same scene blocks with active opto condition)
-5. `fMRI opto block design` (30 s on/off style hardware-timed opto blocks)
+5. `fMRI opto block design` (30 s on/off Arduino opto blocks)
 
 Phase keys in YAML are normalized to canonical internal names (`decoder`, `pre`, `fear`, `post`, `fmri`) so both legacy and descriptive names are accepted.
 Dropout timing is driven by `randomization.dropout.*` (interval, modalities, duration range).
@@ -131,8 +165,8 @@ Default mapping is defined in `configs/experiment.yaml`:
 - `lick_valve.reward_valve_ni_do_channel`: `Dev1/port0/line4`
 - `puff.ni_do_channel`: `Dev1/port0/line5`
 - `visual.trigger_ni_do_channel`: `Dev1/port0/line6`
-- `shock.ni_do_channel`: `Dev1/port0/line7`
-- `opto.ni_do_channel`: `Dev1/port1/line0`
+- `shock.ni_do_channel`: `Dev1/port0/line0`
+- Legacy opto configs are historical; the v2 production opto path uses Arduino D9, not an NI DO line.
 
 Calibration note for liquid reward valve:
 
@@ -143,8 +177,8 @@ For the v2 path, use these corresponding fields in `configs/experiment_v2.yaml`:
 
 - `session.reward_output_name` (logical NI output used for reward valve)
 - `stimuli.reward_valve.duration_ms` (valve opening duration in milliseconds)
-- `stimuli.opto.frequency_hz` and `stimuli.opto.pulse_width_sec` (hardware counter train defaults)
-- `channels.counter_outputs.laser_clock` (NI counter channel used for opto trains)
+- `stimuli.opto.frequency_hz` and `stimuli.opto.pulse_width_sec` (Arduino train defaults)
+- `stimuli.opto.arduino_port`, `stimuli.opto.arduino_baud`, `stimuli.opto.arduino_pin`, `stimuli.opto.arduino_active_low`, and `stimuli.opto.arduino_reset_on_connect`
 
 ## Mouse-level randomization (target scene A/B assignment)
 

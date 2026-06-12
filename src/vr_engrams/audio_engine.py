@@ -7,7 +7,7 @@ import time
 
 @dataclass
 class AudioEngine:
-    """Non-blocking stereo tone backend with graceful fallback if dependencies are missing."""
+    """Stereo tone backend with graceful fallback if dependencies are missing."""
 
     samplerate: int = 48_000
     device: int | None = None
@@ -43,7 +43,14 @@ class AudioEngine:
             self.enabled = False
             self.init_error = f"{self.init_error}; winsound_unavailable: {winsound_exc}"
 
-    def play_tone(self, frequency_hz: float, duration_sec: float, side: str = "both", volume: float = 0.25) -> str | None:
+    def play_tone(
+        self,
+        frequency_hz: float,
+        duration_sec: float,
+        side: str = "both",
+        volume: float = 0.25,
+        block: bool = True,
+    ) -> str | None:
         if not self.enabled:
             return None
 
@@ -66,8 +73,11 @@ class AudioEngine:
                 self._sd.play(stereo, self.samplerate, device=self.device)
                 self._sd.wait()
 
-            self._thread = threading.Thread(target=_play_sounddevice, daemon=True, name="VREngramsAudioTone")
-            self._thread.start()
+            if block:
+                _play_sounddevice()
+            else:
+                self._thread = threading.Thread(target=_play_sounddevice, daemon=True, name="VREngramsAudioTone")
+                self._thread.start()
             return "sounddevice"
 
         if self.active_backend == "winsound" and self._winsound is not None:
@@ -77,8 +87,11 @@ class AudioEngine:
                 # winsound is mono/beep-only, so side/volume are not used.
                 self._winsound.Beep(freq, duration_ms)
 
-            self._thread = threading.Thread(target=_play_winsound, daemon=True, name="VREngramsAudioToneWin")
-            self._thread.start()
+            if block:
+                _play_winsound()
+            else:
+                self._thread = threading.Thread(target=_play_winsound, daemon=True, name="VREngramsAudioToneWin")
+                self._thread.start()
             return "winsound"
 
         # Defensive fallback if backend probes failed after init.

@@ -109,12 +109,17 @@ class VisualEngine:
             dots_stimuli = [
                 self._visual.DotStim(
                     window,
-                    fieldSize=window.size,
+                    fieldSize=float(window.size[0]),
                     nDots=200,
                     dotSize=15,
                     speed=1.6,
+                    dir=0,
                     coherence=0.0,
+                    signalDots="same",
+                    dotLife=1000,
                     fieldShape="rectangle",
+                    color=1.0,
+                    colorSpace="rgb",
                     units="pix",
                 )
                 for window in self._windows

@@ -21,12 +21,15 @@ class LickDetector:
     threshold: float = 2.5
     logic_mode: str = "high_is_lick"
     refractory_sec: float = 0.05
+    reward_delay_sec: float = 0.0
+    reward_refractory_sec: float = 1.0
 
     _running: bool = field(default=False, init=False)
     _reward_on_lick: bool = field(default=False, init=False)
     _thread: threading.Thread | None = field(default=None, init=False)
     _prev_active: bool = field(default=False, init=False)
     _last_lick_time: float = field(default=float("-inf"), init=False)
+    _last_reward_time: float = field(default=float("-inf"), init=False)
 
     def start(self, reward_on_lick: bool = False) -> None:
         if self._running:
@@ -49,9 +52,7 @@ class LickDetector:
             if is_rising and refractory_ok:
                 self._last_lick_time = now
                 self.logger.log_event("lick_detected", sensor_value=raw_value)
-                if self._reward_on_lick and self.reward_callback is not None:
-                    self.reward_callback()
-                    self.logger.log_event("lick_reward_triggered")
+                self._trigger_reward_if_allowed(now)
             self._prev_active = active
             time.sleep(self.poll_interval_sec)
 
@@ -63,6 +64,28 @@ class LickDetector:
         if self.logic_mode == "low_is_lick":
             return value <= self.threshold
         return value >= self.threshold
+
+    def _trigger_reward_if_allowed(self, now: float) -> bool:
+        if not self._reward_on_lick or self.reward_callback is None:
+            return False
+
+        elapsed_since_reward = now - self._last_reward_time
+        if elapsed_since_reward < self.reward_refractory_sec:
+            self.logger.log_event(
+                "lick_reward_suppressed",
+                reason="reward_refractory",
+                elapsed_since_reward_sec=elapsed_since_reward,
+                reward_refractory_sec=self.reward_refractory_sec,
+            )
+            return False
+
+        self._last_reward_time = now
+        if self.reward_delay_sec > 0:
+            self.logger.log_event("lick_reward_delay_start", delay_sec=self.reward_delay_sec)
+            time.sleep(self.reward_delay_sec)
+        self.reward_callback()
+        self.logger.log_event("lick_reward_triggered")
+        return True
 
     def stop(self) -> None:
         self._running = False

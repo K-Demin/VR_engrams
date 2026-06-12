@@ -30,6 +30,10 @@ class DaqController:
     opto_arduino_port: str = "COM3"
     opto_arduino_baud: int = 115200
     opto_arduino_timeout_s: float = 1.0
+    opto_arduino_pin: int = 9
+    opto_arduino_active_low: bool = False
+    opto_arduino_reset_on_connect: bool = False
+    opto_arduino_startup_wait_s: float = 0.05
 
     do_tasks: dict[str, Any] = field(default_factory=dict)
     di_tasks: dict[str, Any] = field(default_factory=dict)
@@ -47,6 +51,7 @@ class DaqController:
         self._opto_do_thread: Thread | None = None
         self._serial = None
         self._opto_serial_port: Any | None = None
+        self._opto_serial_configured = False
 
         if not self.enabled:
             self._logger.info("DAQ disabled by config")
@@ -61,6 +66,7 @@ class DaqController:
         constants = importlib.import_module("nidaqmx.constants")
         self._acquisition_type = constants.AcquisitionType
         self._level = constants.Level
+        self._terminal_configuration = constants.TerminalConfiguration
 
     def create_digital_output(self, name: str, channel: str) -> None:
         if not self.enabled:
@@ -88,7 +94,7 @@ class DaqController:
         if not self.enabled:
             return
         task = self._nidaqmx.Task(new_task_name=f"ai_{name}")
-        task.ai_channels.add_ai_voltage_chan(channel)
+        task.ai_channels.add_ai_voltage_chan(channel, terminal_config=self._terminal_configuration.RSE)
         self.ai_tasks[name] = task
 
     def pulse_output(self, name: str, duration_sec: float) -> str:
@@ -237,55 +243,141 @@ class DaqController:
         self._serial = importlib.import_module("serial")
         return self._serial
 
+    def _open_opto_serial_port(self) -> Any:
+        serial = self._get_serial_module()
+        if self.opto_arduino_reset_on_connect:
+            return serial.Serial(
+                self.opto_arduino_port,
+                int(self.opto_arduino_baud),
+                timeout=float(self.opto_arduino_timeout_s),
+            )
+
+        ser = serial.Serial()
+        ser.port = self.opto_arduino_port
+        ser.baudrate = int(self.opto_arduino_baud)
+        ser.timeout = float(self.opto_arduino_timeout_s)
+        ser.dtr = False
+        ser.rts = False
+        ser.open()
+        try:
+            ser.setDTR(False)
+            ser.setRTS(False)
+        except Exception:
+            pass
+        return ser
+
     def _ensure_opto_serial_connected(self) -> Any:
         if self._opto_serial_port is not None and bool(getattr(self._opto_serial_port, "is_open", False)):
+            self._configure_opto_arduino()
             return self._opto_serial_port
 
-        serial = self._get_serial_module()
-        self._opto_serial_port = serial.Serial(
-            self.opto_arduino_port,
-            int(self.opto_arduino_baud),
-            timeout=float(self.opto_arduino_timeout_s),
-        )
-        # Let Arduino reset after serial open.
-        time.sleep(2.0)
+        self._opto_serial_port = self._open_opto_serial_port()
         self._opto_serial_port.reset_input_buffer()
+        if self.opto_arduino_startup_wait_s > 0:
+            time.sleep(float(self.opto_arduino_startup_wait_s))
+        self._drain_opto_serial_lines(label="opto_train arduino_startup")
         self._logger.info(
-            "opto_train path=arduino_connected port=%s baud=%s",
+            "opto_train path=arduino_connected port=%s baud=%s pin=D%s active_low=%s reset_on_connect=%s",
             self.opto_arduino_port,
             self.opto_arduino_baud,
+            self.opto_arduino_pin,
+            self.opto_arduino_active_low,
+            self.opto_arduino_reset_on_connect,
         )
+        self._configure_opto_arduino()
         return self._opto_serial_port
+
+    def _drain_opto_serial_lines(self, label: str, timeout_s: float = 0.1) -> None:
+        if self._opto_serial_port is None:
+            return
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            line = self._opto_serial_port.readline().decode("utf-8", errors="replace").strip()
+            if line:
+                self._logger.info("%s=%s", label, line)
+                deadline = time.time() + timeout_s
+
+    def _send_opto_arduino_command(
+        self,
+        command: str,
+        accepted_prefixes: tuple[str, ...],
+        timeout_s: float,
+    ) -> str:
+        if self._opto_serial_port is None:
+            raise RuntimeError("Arduino serial port is not open")
+        self._opto_serial_port.write(f"{command.strip()}\n".encode("ascii"))
+        self._opto_serial_port.flush()
+
+        deadline = time.time() + max(0.1, timeout_s)
+        while time.time() < deadline:
+            line = self._opto_serial_port.readline().decode("utf-8", errors="replace").strip()
+            if line:
+                self._logger.info("opto_train arduino_response=%s", line)
+            if any(line.startswith(prefix) for prefix in accepted_prefixes):
+                return line
+            if line.startswith("ERR"):
+                raise RuntimeError(f"Arduino rejected command '{command.strip()}': {line}")
+        raise TimeoutError(f"Timed out waiting for {accepted_prefixes} from Arduino after sending {command.strip()}")
+
+    def _send_opto_arduino_off(self, timeout_s: float = 0.5) -> None:
+        if self._opto_serial_port is None or not bool(getattr(self._opto_serial_port, "is_open", False)):
+            return
+        try:
+            self._send_opto_arduino_command("OFF", accepted_prefixes=("OK OFF",), timeout_s=timeout_s)
+        except Exception as exc:
+            self._logger.warning("opto_train arduino_off_failed=%s", exc)
+
+    def _configure_opto_arduino(self) -> None:
+        if self._opto_serial_configured:
+            return
+        polarity = "ACTIVE_LOW" if self.opto_arduino_active_low else "ACTIVE_HIGH"
+        try:
+            self._send_opto_arduino_command(f"POLARITY {polarity}", accepted_prefixes=("OK POLARITY",), timeout_s=1.0)
+            self._send_opto_arduino_off()
+            self._send_opto_arduino_command("PING", accepted_prefixes=("OK PING",), timeout_s=1.0)
+        except Exception as exc:
+            raise RuntimeError(
+                "Arduino opto firmware did not accept the required safety/polarity commands. "
+                "Upload tools/arduino_opto_firmware/arduino_opto_firmware.ino, which supports PING, POLARITY, OFF, and TRAIN."
+            ) from exc
+        self._opto_serial_configured = True
 
     def _start_opto_arduino_train(self, duration_sec: float | None) -> str:
         if duration_sec is None:
             raise ValueError("Arduino opto mode requires a finite duration_sec")
-        ser = self._ensure_opto_serial_connected()
+        self._ensure_opto_serial_connected()
 
         pulse_ms = float(self.opto_pulse_width_s) * 1000.0
         duration_ms = int(round(float(duration_sec) * 1000.0))
         command = f"TRAIN {float(self.opto_freq_hz):.6f} {pulse_ms:.6f} {duration_ms}\n"
-        ser.write(command.encode("ascii"))
-        ser.flush()
+        self._logger.info(
+            "opto_train arduino_command port=%s pin=D%s active_low=%s command=%s",
+            self.opto_arduino_port,
+            self.opto_arduino_pin,
+            self.opto_arduino_active_low,
+            command.strip(),
+        )
+        try:
+            self._send_opto_arduino_command(
+                command,
+                accepted_prefixes=("OK TRAIN",),
+                timeout_s=max(2.0, float(duration_sec) + 2.0),
+            )
+        except Exception:
+            self._send_opto_arduino_off()
+            raise
 
-        deadline = time.time() + max(2.0, float(duration_sec) + 2.0)
-        while time.time() < deadline:
-            line = ser.readline().decode("utf-8", errors="replace").strip()
-            if line:
-                self._logger.info("opto_train arduino_response=%s", line)
-            if line.startswith("OK TRAIN"):
-                self._logger.info(
-                    "opto_train path=arduino_serial port=%s freq_hz=%s pulse_width_s=%s duration_sec=%s",
-                    self.opto_arduino_port,
-                    self.opto_freq_hz,
-                    self.opto_pulse_width_s,
-                    duration_sec,
-                )
-                return "arduino_serial"
-            if line.startswith("ERR"):
-                raise RuntimeError(f"Arduino rejected TRAIN command: {line}")
-
-        raise TimeoutError("Timed out waiting for 'OK TRAIN' from Arduino")
+        self._send_opto_arduino_off()
+        self._logger.info(
+            "opto_train path=arduino_serial port=%s pin=D%s active_low=%s freq_hz=%s pulse_width_s=%s duration_sec=%s",
+            self.opto_arduino_port,
+            self.opto_arduino_pin,
+            self.opto_arduino_active_low,
+            self.opto_freq_hz,
+            self.opto_pulse_width_s,
+            duration_sec,
+        )
+        return "arduino_serial"
 
     def _start_opto_counter_train(self, duration_sec: float | None) -> str:
         self.stop_opto_train()
@@ -377,14 +469,20 @@ class DaqController:
         if self._opto_serial_port is not None:
             try:
                 if bool(getattr(self._opto_serial_port, "is_open", False)):
+                    self._send_opto_arduino_off()
                     self._opto_serial_port.close()
             except Exception:
                 pass
             self._opto_serial_port = None
+            self._opto_serial_configured = False
 
     def write_output(self, name: str, state: bool) -> None:
-        if self.enabled:
-            self.do_tasks[name].write(state)
+        if not self.enabled:
+            self._logger.info("write_output path=fallback_disabled_no_hardware name=%s state=%s", name, state)
+            return
+        if name not in self.do_tasks:
+            raise ValueError(f"Digital output '{name}' is not configured")
+        self.do_tasks[name].write(bool(state))
 
     def read_input(self, name: str) -> float | bool:
         if not self.enabled:

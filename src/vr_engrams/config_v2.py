@@ -86,6 +86,7 @@ def validate_experiment_v2_config(config: dict[str, Any], source: str = "config"
     _validate_phase_blocks(phases, errors)
     _validate_device_names(config, errors)
     _validate_imaging_config(config, errors)
+    _validate_background_config(config, errors)
 
     if errors:
         message = f"Invalid experiment_v2 config ({source}):\n- " + "\n- ".join(errors)
@@ -157,6 +158,10 @@ def _validate_device_names(config: dict[str, Any], errors: list[str]) -> None:
     counter_outputs = channels.get("counter_outputs", {}) if isinstance(channels.get("counter_outputs", {}), dict) else {}
     outputs = set(digital_outputs) | set(analog_outputs)
     inputs = set(digital_inputs) | set(analog_inputs)
+    _validate_unique_channels("channels.digital_outputs", digital_outputs, errors)
+    _validate_unique_channels("channels.analog_outputs", analog_outputs, errors)
+    _validate_unique_channels("channels.digital_inputs", digital_inputs, errors)
+    _validate_unique_channels("channels.analog_inputs", analog_inputs, errors)
 
     session = config.get("session", {}) if isinstance(config.get("session", {}), dict) else {}
     lick_input_name = session.get("lick_input_name")
@@ -174,10 +179,27 @@ def _validate_device_names(config: dict[str, Any], errors: list[str]) -> None:
         )
 
     stimuli = config.get("stimuli", {}) if isinstance(config.get("stimuli", {}), dict) else {}
+    whisker_cfg = stimuli.get("whisker", {}) if isinstance(stimuli.get("whisker", {}), dict) else {}
+    for key in ("output_name",):
+        output_name = whisker_cfg.get(key)
+        if output_name and output_name not in outputs:
+            errors.append(f"Configured whisker output '{output_name}' from stimuli.whisker.{key} is not defined in output channels")
+    side_selector_output = whisker_cfg.get("side_selector_output_name")
+    if side_selector_output and side_selector_output not in digital_outputs:
+        errors.append(
+            f"Configured whisker selector '{side_selector_output}' from stimuli.whisker.side_selector_output_name is not defined in channels.digital_outputs"
+        )
+    for frequency_key in ("frequency_hz", "puff_a_frequency_hz", "puff_b_frequency_hz"):
+        if frequency_key in whisker_cfg and float(whisker_cfg[frequency_key]) <= 0:
+            errors.append(f"stimuli.whisker.{frequency_key} must be > 0 Hz")
+    for duration_key in ("duration_sec", "puff_a_duration_sec", "puff_b_duration_sec"):
+        if duration_key in whisker_cfg and float(whisker_cfg[duration_key]) <= 0:
+            errors.append(f"stimuli.whisker.{duration_key} must be > 0 sec")
+
     opto_cfg = stimuli.get("opto", {}) if isinstance(stimuli.get("opto", {}), dict) else {}
     opto_output = opto_cfg.get("output_name", "opto")
     opto_mode = str(config.get("daq", {}).get("opto_mode", "arduino")).lower() if isinstance(config.get("daq", {}), dict) else "arduino"
-    if opto_mode in {"arduino", "dio"} and opto_output not in outputs:
+    if opto_mode == "dio" and opto_output not in outputs:
         errors.append(f"Configured opto output '{opto_output}' is not defined in output channels")
     if opto_mode == "counter":
         counter_name = channels.get("counter_outputs", {}).get("laser_clock") if isinstance(channels.get("counter_outputs", {}), dict) else None
@@ -189,10 +211,11 @@ def _validate_device_names(config: dict[str, Any], errors: list[str]) -> None:
     if _phase_enabled(decoder):
         for condition in decoder.get("conditions", []):
             if "whisker" in str(condition):
-                whisker_output = stimuli.get("whisker", {}).get("output_name", "puff") if isinstance(stimuli.get("whisker", {}), dict) else "puff"
+                whisker_output = whisker_cfg.get("output_name", "puff")
                 if whisker_output not in outputs:
                     errors.append(f"Decoder whisker condition requires output '{whisker_output}' in channels")
-                break
+                if str(condition).endswith("_b") and side_selector_output and side_selector_output not in digital_outputs:
+                    errors.append(f"Decoder whisker_b condition requires selector output '{side_selector_output}' in channels.digital_outputs")
 
     fear = phases.get("fear", {})
     if _phase_enabled(fear) and bool(fear.get("shock_enabled", False)):
@@ -203,7 +226,7 @@ def _validate_device_names(config: dict[str, Any], errors: list[str]) -> None:
     fmri = phases.get("fmri", {})
     if _phase_enabled(fmri):
         fmri_opto = fmri.get("opto_channel", opto_output)
-        if opto_mode != "counter" and fmri_opto not in outputs:
+        if opto_mode == "dio" and fmri_opto not in outputs:
             errors.append(f"fMRI opto block design requires opto output '{fmri_opto}' in channels")
 
     imaging = config.get("imaging", {}) if isinstance(config.get("imaging", {}), dict) else {}
@@ -228,6 +251,19 @@ def _validate_imaging_config(config: dict[str, Any], errors: list[str]) -> None:
     _require_keys(session, "session", ["session_num", "run_num", "task_label"], errors)
 
 
+def _validate_background_config(config: dict[str, Any], errors: list[str]) -> None:
+    if "background" not in config:
+        return
+
+    background = config.get("background", {})
+    _require_mapping(background, "background", errors)
+    if not isinstance(background, dict):
+        return
+
+    if "duration_sec" in background and float(background["duration_sec"]) < 0:
+        errors.append("background.duration_sec must be >= 0")
+
+
 def _normalized_phases(phases: Any) -> dict[str, dict[str, Any]]:
     if not isinstance(phases, dict):
         return {}
@@ -249,3 +285,17 @@ def _normalized_phases(phases: Any) -> dict[str, dict[str, Any]]:
 
 def _phase_enabled(phase_cfg: Any) -> bool:
     return isinstance(phase_cfg, dict) and bool(phase_cfg.get("enabled", True))
+
+
+def _validate_unique_channels(path: str, channels: dict[str, Any], errors: list[str]) -> None:
+    seen: dict[str, str] = {}
+    for logical_name, raw_channel in channels.items():
+        channel = str(raw_channel).strip().lower()
+        if not channel:
+            continue
+        if channel in seen:
+            errors.append(
+                f"Duplicate physical output channel in {path}: '{logical_name}' and '{seen[channel]}' both use '{raw_channel}'"
+            )
+        else:
+            seen[channel] = str(logical_name)

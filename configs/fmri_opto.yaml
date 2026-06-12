@@ -5,8 +5,7 @@ daq:
 channels:
   digital_outputs:
     puff: "Dev1/port0/line5"
-    shock: "Dev1/port0/line7"
-    opto: "Dev1/port1/line0"
+    shock: "Dev1/port0/line0"
     ir_led: "Dev1/port0/line1"
   digital_inputs: {}
   analog_outputs:
@@ -47,6 +46,10 @@ stimuli:
     arduino_port: "COM3"
     arduino_baud: 115200
     arduino_timeout_sec: 1.0
+    arduino_pin: 9
+    arduino_active_low: false
+    arduino_reset_on_connect: false
+    arduino_startup_wait_sec: 0.05
     power_mw: 0.0
   reward_valve:
     output_name: "reward_valve"
@@ -64,6 +67,10 @@ imaging:
   timesync_samples: 5
   ir_led_output_name: "ir_led"
   ir_led_pulse_duration_sec: 0.5
+
+background:
+  enabled: true
+  duration_sec: 30.0
 
 phases:
   fMRI opto block design:

@@ -8,6 +8,113 @@ from typing import Any
 from .base import ExperimentPhase
 
 
+def _puff_delivery_for_side(phase_config: dict[str, Any], side: str, whisker_cfg: dict[str, Any]) -> dict[str, Any]:
+    channel = str(phase_config.get("puff_channel", whisker_cfg.get("output_name", "puff")))
+    fallback = phase_config.get("puff_duration_sec", whisker_cfg.get("duration_sec", 0.05))
+    frequency_fallback = phase_config.get("puff_frequency_hz", whisker_cfg.get("frequency_hz", 1.0))
+    selector_channel = phase_config.get("puff_selector_channel", whisker_cfg.get("side_selector_output_name"))
+    selector_state = phase_config.get(
+        f"puff_{side}_selector_state",
+        whisker_cfg.get(f"puff_{side}_selector_state", side == "b"),
+    )
+    reset_selector_state = None
+    if bool(phase_config.get("reset_selector_after_puff", whisker_cfg.get("reset_selector_after_puff", True))):
+        reset_selector_state = bool(
+            phase_config.get(
+                "puff_selector_reset_state",
+                whisker_cfg.get("selector_reset_state", whisker_cfg.get("puff_a_selector_state", False)),
+            )
+        )
+
+    return {
+        "channel": channel,
+        "duration_sec": float(phase_config.get(f"puff_{side}_duration_sec", whisker_cfg.get(f"puff_{side}_duration_sec", fallback))),
+        "frequency_hz": float(phase_config.get(f"puff_{side}_frequency_hz", whisker_cfg.get(f"puff_{side}_frequency_hz", frequency_fallback))),
+        "selector_channel": str(selector_channel) if selector_channel else None,
+        "selector_state": bool(selector_state) if selector_channel else None,
+        "selector_settle_sec": float(phase_config.get("selector_settle_sec", whisker_cfg.get("selector_settle_sec", 0.0))),
+        "selector_hold_after_sec": float(phase_config.get("selector_hold_after_sec", whisker_cfg.get("selector_hold_after_sec", 0.0))),
+        "reset_selector_state": reset_selector_state if selector_channel else None,
+    }
+
+
+def _deliver_puff_train(context: Any, delivery: dict[str, Any], total_duration_sec: float, label: str) -> None:
+    total_duration_sec = max(0.0, float(total_duration_sec))
+    pulse_duration_sec = max(0.0001, min(float(delivery.get("puff_duration_sec", delivery.get("duration_sec", 0.05))), total_duration_sec))
+    frequency_hz = float(delivery.get("puff_frequency_hz", delivery.get("frequency_hz", 1.0)))
+    if frequency_hz <= 0:
+        raise ValueError(f"Whisker puff train frequency must be > 0 Hz, got {frequency_hz}")
+
+    channel = str(delivery.get("puff_channel", delivery.get("channel", "puff")))
+    selector_channel = delivery.get("puff_selector_channel", delivery.get("selector_channel"))
+    selector_state = delivery.get("puff_selector_state", delivery.get("selector_state"))
+    selector_settle_sec = float(delivery.get("puff_selector_settle_sec", delivery.get("selector_settle_sec", 0.0)))
+    selector_hold_after_sec = float(delivery.get("puff_selector_hold_after_sec", delivery.get("selector_hold_after_sec", 0.0)))
+    reset_selector_state = delivery.get("puff_selector_reset_state", delivery.get("reset_selector_state"))
+
+    context.logger.log_event(
+        "stim_puff_train_start",
+        label=label,
+        channel=channel,
+        total_duration_sec=total_duration_sec,
+        pulse_duration_sec=pulse_duration_sec,
+        frequency_hz=frequency_hz,
+        selector_channel=selector_channel,
+        selector_state=selector_state,
+    )
+
+    if selector_channel is not None and selector_state is not None:
+        context.stimuli.daq.write_output(str(selector_channel), bool(selector_state))
+        context.logger.log_event(
+            "stim_puff_train_selector",
+            label=label,
+            selector_channel=selector_channel,
+            selector_state=bool(selector_state),
+            selector_settle_sec=selector_settle_sec,
+        )
+        if selector_settle_sec > 0:
+            time.sleep(selector_settle_sec)
+
+    period_sec = 1.0 / frequency_hz
+    train_start = time.perf_counter()
+    pulse_count = 0
+    try:
+        while True:
+            elapsed_sec = time.perf_counter() - train_start
+            if elapsed_sec >= total_duration_sec:
+                break
+
+            remaining_sec = total_duration_sec - elapsed_sec
+            current_pulse_sec = min(pulse_duration_sec, remaining_sec)
+            context.stimuli.deliver_puff(channel=channel, duration_sec=current_pulse_sec)
+            pulse_count += 1
+
+            next_pulse_at = train_start + (pulse_count * period_sec)
+            sleep_sec = min(next_pulse_at - time.perf_counter(), total_duration_sec - (time.perf_counter() - train_start))
+            if sleep_sec > 0:
+                time.sleep(sleep_sec)
+    finally:
+        if selector_channel is not None and reset_selector_state is not None:
+            if selector_hold_after_sec > 0:
+                time.sleep(selector_hold_after_sec)
+            context.stimuli.daq.write_output(str(selector_channel), bool(reset_selector_state))
+            context.logger.log_event(
+                "stim_puff_train_selector_reset",
+                label=label,
+                selector_channel=selector_channel,
+                selector_state=bool(reset_selector_state),
+                selector_hold_after_sec=selector_hold_after_sec,
+            )
+
+    context.logger.log_event(
+        "stim_puff_train_end",
+        label=label,
+        channel=channel,
+        pulse_count=pulse_count,
+        elapsed_sec=time.perf_counter() - train_start,
+    )
+
+
 class DecoderTrainingPhase(ExperimentPhase):
     phase_key = "decoder"
     display_name = "decoder"
@@ -45,9 +152,11 @@ class DecoderTrainingPhase(ExperimentPhase):
                     side=str(trial.get("side", "both")),
                 )
             elif condition in {"whisker_a", "whisker_b"}:
-                self.context.stimuli.deliver_puff(
-                    channel=str(trial.get("puff_channel", "puff")),
-                    duration_sec=duration_sec,
+                _deliver_puff_train(
+                    context=self.context,
+                    delivery=trial,
+                    total_duration_sec=duration_sec,
+                    label=f"decoder_{condition}",
                 )
             else:
                 self._sleep(duration_sec)
@@ -65,6 +174,7 @@ class DecoderTrainingPhase(ExperimentPhase):
         reps = int(self.config.get("reps_per_condition", 1))
         stimuli_cfg = dict(self.config.get("_stimuli", {}))
         audio_cfg = dict(stimuli_cfg.get("audio", {}))
+        whisker_cfg = dict(stimuli_cfg.get("whisker", {}))
         event_range = self.config.get("event_duration_sec", [2.0, 10.0])
         iti_range = self.config.get("iti_sec", [2.0, 10.0])
         event_min, event_max = float(event_range[0]), float(event_range[1])
@@ -91,7 +201,16 @@ class DecoderTrainingPhase(ExperimentPhase):
                 elif condition == "screen_b":
                     trial["visual_channel"] = str(self.config.get("screen_b_channel", "screen_b"))
                 elif condition in {"whisker_a", "whisker_b"}:
-                    trial["puff_channel"] = str(self.config.get("puff_channel", "puff"))
+                    side = condition.split("_", maxsplit=1)[1]
+                    puff_delivery = _puff_delivery_for_side(self.config, side, whisker_cfg)
+                    trial["puff_channel"] = puff_delivery["channel"]
+                    trial["puff_duration_sec"] = puff_delivery["duration_sec"]
+                    trial["puff_frequency_hz"] = puff_delivery["frequency_hz"]
+                    trial["puff_selector_channel"] = puff_delivery["selector_channel"]
+                    trial["puff_selector_state"] = puff_delivery["selector_state"]
+                    trial["puff_selector_settle_sec"] = puff_delivery["selector_settle_sec"]
+                    trial["puff_selector_hold_after_sec"] = puff_delivery["selector_hold_after_sec"]
+                    trial["puff_selector_reset_state"] = puff_delivery["reset_selector_state"]
                 trials.append(trial)
         return trials
 
@@ -154,13 +273,41 @@ class PreConditioningScenePhase(ExperimentPhase):
             self._sleep(duration_sec)
             return
         if condition == "opto_sham":
-            self.context.logger.log_event(f"{label}_opto_sham", block_index=block_idx, duration_sec=duration_sec)
-            self._sleep(duration_sec)
+            scene_key = str(block.get("scene_key", "target"))
+            self.context.logger.log_event(f"{label}_opto_sham", block_index=block_idx, duration_sec=duration_sec, scene_key=scene_key)
+            self._run_scene_with_dropout(label=label, block_idx=block_idx, scene_key=scene_key, duration_sec=duration_sec)
             return
         if condition == "active_opto":
-            self.context.logger.log_event(f"{label}_active_opto_start", block_index=block_idx, duration_sec=duration_sec)
-            self.context.stimuli.deliver_opto(channel="opto", duration_sec=duration_sec)
-            self.context.logger.log_event(f"{label}_active_opto_end", block_index=block_idx)
+            scene_key = str(block.get("scene_key", "target"))
+            opto_channel = str(block.get("opto_channel", self.config.get("opto_channel", "opto")))
+            opto_errors: list[BaseException] = []
+
+            def _run_opto() -> None:
+                try:
+                    self.context.stimuli.deliver_opto(channel=opto_channel, duration_sec=duration_sec)
+                except BaseException as exc:
+                    opto_errors.append(exc)
+
+            self.context.logger.log_event(
+                f"{label}_active_opto_start",
+                block_index=block_idx,
+                duration_sec=duration_sec,
+                scene_key=scene_key,
+                opto_channel=opto_channel,
+            )
+            opto_thread = threading.Thread(
+                target=_run_opto,
+                daemon=True,
+                name=f"{label}_active_opto",
+            )
+            opto_thread.start()
+            try:
+                self._run_scene_with_dropout(label=label, block_idx=block_idx, scene_key=scene_key, duration_sec=duration_sec)
+            finally:
+                opto_thread.join(timeout=duration_sec + 1.0)
+            if opto_errors:
+                raise RuntimeError(f"Active opto failed during {label} block {block_idx}") from opto_errors[0]
+            self.context.logger.log_event(f"{label}_active_opto_end", block_index=block_idx, scene_key=scene_key)
             return
 
         scene_key = "target" if condition == "target" else "distractor"
@@ -170,12 +317,18 @@ class PreConditioningScenePhase(ExperimentPhase):
         scene_id = str(self.context.scene_assignment[scene_key])
         randomization_cfg = dict(self.config.get("_randomization", {}))
         dropout_cfg = dict(randomization_cfg.get("dropout", {}))
+        dropout_enabled = bool(dropout_cfg.get("enabled", False))
         dropout_interval_sec = float(dropout_cfg.get("interval_sec", 10.0))
         dropout_range = list(dropout_cfg.get("dropout_duration_sec", [2.0, 4.0]))
         dropout_modalities = list(dropout_cfg.get("dropped_modalities", ["screen", "sound", "whisker"]))
         self.context.logger.log_event(
             f"{label}_scene_start", block_index=block_idx, scene_key=scene_key, scene_id=scene_id, duration_sec=duration_sec
         )
+
+        if not dropout_enabled:
+            self._deliver_scene_chunk(scene_id=scene_id, duration_sec=duration_sec, dropped=None)
+            self.context.logger.log_event(f"{label}_scene_end", block_index=block_idx, scene_key=scene_key, scene_id=scene_id)
+            return
 
         elapsed = 0.0
         while elapsed < duration_sec:
@@ -191,9 +344,9 @@ class PreConditioningScenePhase(ExperimentPhase):
                 drop_for_sec=drop_for,
                 keep_for_sec=keep_for,
             )
-            self._deliver_scene_chunk(scene_id=scene_id, duration_sec=keep_for, dropped=drop_modality)
+            self._deliver_scene_chunk(scene_id=scene_id, duration_sec=keep_for, dropped=None)
             if drop_for > 0:
-                self._deliver_scene_chunk(scene_id=scene_id, duration_sec=drop_for, dropped=None)
+                self._deliver_scene_chunk(scene_id=scene_id, duration_sec=drop_for, dropped=drop_modality)
             elapsed += chunk
 
         self.context.logger.log_event(f"{label}_scene_end", block_index=block_idx, scene_key=scene_key, scene_id=scene_id)
@@ -210,14 +363,6 @@ class PreConditioningScenePhase(ExperimentPhase):
         )
         workers: list[threading.Thread] = []
 
-        if dropped != "screen":
-            workers.append(
-                threading.Thread(
-                    target=self.context.stimuli.deliver_visual,
-                    kwargs={"channel": f"screen_{scene_id.lower()}", "duration_sec": duration_sec},
-                    daemon=True,
-                )
-            )
         if dropped != "sound":
             workers.append(
                 threading.Thread(
@@ -227,17 +372,24 @@ class PreConditioningScenePhase(ExperimentPhase):
                 )
             )
         if dropped != "whisker":
+            whisker_cfg = dict(stimuli_cfg.get("whisker", {}))
+            puff_delivery = _puff_delivery_for_side(self.config, scene_id.lower(), whisker_cfg)
             workers.append(
                 threading.Thread(
-                    target=self.context.stimuli.deliver_puff,
-                    kwargs={"channel": "puff", "duration_sec": min(0.05, duration_sec)},
+                    target=_deliver_puff_train,
+                    kwargs={"context": self.context, "delivery": puff_delivery, "total_duration_sec": duration_sec, "label": f"scene_{scene_id}_whisker"},
                     daemon=True,
                 )
             )
 
+        visual_channel = f"screen_{scene_id.lower()}" if dropped != "screen" else None
+
         chunk_start = time.perf_counter()
         for worker in workers:
             worker.start()
+
+        if visual_channel is not None:
+            self.context.stimuli.deliver_visual(channel=visual_channel, duration_sec=duration_sec)
 
         for worker in workers:
             worker.join(timeout=max(0.001, duration_sec))

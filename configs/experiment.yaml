@@ -17,10 +17,10 @@ hardware_channels:
     trigger_ni_do_channel: "Dev1/port0/line6"
     display_id: 0
   shock:
-    ni_do_channel: "Dev1/port0/line7"
+    ni_do_channel: "Dev1/port0/line0"
     enabled: false
   opto:
-    ni_do_channel: "Dev1/port1/line0"
+    arduino_pin: 9
     enabled: false
 
 stimulus_parameters:

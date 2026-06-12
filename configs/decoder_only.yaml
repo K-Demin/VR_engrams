@@ -5,9 +5,9 @@ daq:
 channels:
   digital_outputs:
     puff: "Dev1/port0/line5"
-    shock: "Dev1/port0/line7"
-    opto: "Dev1/port1/line0"
+    shock: "Dev1/port0/line0"
     ir_led: "Dev1/port0/line1"
+    puff_b_selector: "Dev1/port0/line7"
   digital_inputs: {}
   analog_outputs:
     reward_valve: "Dev1/ao1"
@@ -34,7 +34,18 @@ stimuli:
     duration_sec: 0.2
   whisker:
     output_name: "puff"
+    side_selector_output_name: "puff_b_selector"
+    puff_a_selector_state: false
+    puff_b_selector_state: true
+    selector_reset_state: false
+    selector_settle_sec: 0.05
+    selector_hold_after_sec: 0.05
+    reset_selector_after_puff: true
     duration_sec: 0.05
+    puff_a_duration_sec: 0.05
+    puff_b_duration_sec: 0.05
+    puff_a_frequency_hz: 1.0
+    puff_b_frequency_hz: 1.0
   shock:
     output_name: "shock"
     duration_sec: 0.2
@@ -47,6 +58,10 @@ stimuli:
     arduino_port: "COM3"
     arduino_baud: 115200
     arduino_timeout_sec: 1.0
+    arduino_pin: 9
+    arduino_active_low: false
+    arduino_reset_on_connect: false
+    arduino_startup_wait_sec: 0.05
     power_mw: 0.0
   reward_valve:
     output_name: "reward_valve"
@@ -64,6 +79,10 @@ imaging:
   timesync_samples: 5
   ir_led_output_name: "ir_led"
   ir_led_pulse_duration_sec: 0.5
+
+background:
+  enabled: true
+  duration_sec: 30.0
 
 phases:
   decoder:
@@ -107,8 +126,11 @@ session:
   run_num: 1
   lick_input_name: "lick"
   reward_output_name: "reward_valve"
-  reward_on_lick: false
+  monitor_licks: true
+  reward_on_lick: true
   lick_poll_interval_sec: 0.005
   lick_threshold: 1.0
   lick_logic_mode: "low_is_lick"
   lick_refractory_sec: 0.05
+  lick_reward_delay_sec: 0.0
+  lick_reward_refractory_sec: 1.0

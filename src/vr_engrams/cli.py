@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -181,6 +182,10 @@ def _create_daq(config: dict[str, Any]) -> DaqController:
         opto_arduino_port=str(config["stimuli"]["opto"].get("arduino_port", "COM3")),
         opto_arduino_baud=int(config["stimuli"]["opto"].get("arduino_baud", 115200)),
         opto_arduino_timeout_s=float(config["stimuli"]["opto"].get("arduino_timeout_sec", 1.0)),
+        opto_arduino_pin=int(config["stimuli"]["opto"].get("arduino_pin", 9)),
+        opto_arduino_active_low=bool(config["stimuli"]["opto"].get("arduino_active_low", False)),
+        opto_arduino_reset_on_connect=bool(config["stimuli"]["opto"].get("arduino_reset_on_connect", False)),
+        opto_arduino_startup_wait_s=float(config["stimuli"]["opto"].get("arduino_startup_wait_sec", 0.05)),
     )
 
     for logical_name, channel in config["channels"]["digital_outputs"].items():
@@ -199,6 +204,45 @@ def _reward_duration_sec(config: dict[str, Any]) -> float:
     if "duration_ms" in reward_cfg:
         return max(0.0001, float(reward_cfg["duration_ms"]) / 1000.0)
     return max(0.0001, float(reward_cfg.get("duration_sec", 0.05)))
+
+
+def _run_background_period(config: dict[str, Any], stimuli: StimulusController, logger: ExperimentLogger) -> None:
+    background_cfg = config.get("background", {})
+    if not isinstance(background_cfg, dict):
+        background_cfg = {}
+
+    enabled = bool(background_cfg.get("enabled", False))
+    duration_sec = max(0.0, float(background_cfg.get("duration_sec", 0.0)))
+    if not enabled or duration_sec <= 0:
+        logger.log_event("background_skipped", enabled=enabled, duration_sec=duration_sec)
+        return
+
+    if stimuli.audio_engine is not None:
+        stimuli.audio_engine.stop()
+    if stimuli.visual_engine is not None:
+        stimuli.visual_engine.show_black()
+
+    start_perf = time.perf_counter()
+    logger.log_event(
+        "background_start",
+        duration_sec=duration_sec,
+        screen_state="black",
+        reward_available=False,
+        lick_monitor_active=False,
+        stimulus_state="no_stim",
+    )
+    time.sleep(duration_sec)
+    if stimuli.visual_engine is not None:
+        stimuli.visual_engine.show_black()
+    logger.log_event(
+        "background_end",
+        duration_sec=0.0,
+        actual_duration_sec=time.perf_counter() - start_perf,
+        screen_state="black",
+        reward_available=False,
+        lick_monitor_active=False,
+        stimulus_state="no_stim",
+    )
 
 
 def main() -> None:
@@ -300,6 +344,8 @@ def main() -> None:
         threshold=float(config["session"].get("lick_threshold", 2.5)),
         logic_mode=str(config["session"].get("lick_logic_mode", "high_is_lick")),
         refractory_sec=float(config["session"].get("lick_refractory_sec", 0.05)),
+        reward_delay_sec=float(config["session"].get("lick_reward_delay_sec", 0.0)),
+        reward_refractory_sec=float(config["session"].get("lick_reward_refractory_sec", 1.0)),
     )
 
     scheduler = ExperimentScheduler(
@@ -343,6 +389,8 @@ def main() -> None:
             if ir_sync is not None:
                 ir_sync.pulse("ir_sync_run_start", blocking=True)
                 ir_sync.pulse("ir_sync_imaging_start", blocking=True)
+
+        _run_background_period(config=config, stimuli=stimuli, logger=logger)
 
         if _lick_monitor_required(config):
             lick_detector.start(reward_on_lick=bool(config["session"].get("reward_on_lick", False)))
